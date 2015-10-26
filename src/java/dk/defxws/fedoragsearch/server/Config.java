@@ -9,8 +9,6 @@ package dk.defxws.fedoragsearch.server;
 
 import java.io.ByteArrayInputStream;
 import java.io.File;
-import java.io.FileInputStream;
-import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.StringReader;
@@ -18,8 +16,10 @@ import java.io.StringWriter;
 import java.lang.reflect.InvocationTargetException;
 import java.net.URL;
 import java.util.Enumeration;
+import java.util.HashMap;
 import java.util.Hashtable;
 import java.util.ListIterator;
+import java.util.Map;
 import java.util.Properties;
 import java.util.StringTokenizer;
 import java.util.regex.Matcher;
@@ -28,6 +28,7 @@ import java.util.regex.Pattern;
 import javax.xml.transform.Transformer;
 import javax.xml.transform.TransformerConfigurationException;
 import javax.xml.transform.TransformerException;
+import javax.xml.transform.TransformerFactory;
 import javax.xml.transform.TransformerFactoryConfigurationError;
 import javax.xml.transform.URIResolver;
 import javax.xml.transform.stream.StreamResult;
@@ -39,18 +40,18 @@ import org.apache.commons.httpclient.HttpStatus;
 import org.apache.commons.httpclient.ProxyHost;
 import org.apache.commons.httpclient.URI;
 import org.apache.commons.httpclient.methods.GetMethod;
+import org.apache.log4j.Logger;
 import org.apache.lucene.analysis.Analyzer;
 import org.apache.lucene.document.Document;
 import org.apache.lucene.document.Field;
 import org.apache.lucene.index.IndexReader;
 import org.apache.lucene.index.IndexWriterConfig;
 import org.apache.lucene.store.FSDirectory;
-import org.apache.xalan.processor.TransformerFactoryImpl;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
 import de.escidoc.core.common.util.configuration.EscidocConfiguration;
+import de.escidoc.sb.common.lucene.analyzer.EscidocAnalyzer;
 import dk.defxws.fedoragsearch.server.errors.ConfigException;
+import dk.defxws.fedoragsearch.server.errors.GenericSearchException;
 
 /**
  * Reads and checks the configuration files,
@@ -68,6 +69,21 @@ import dk.defxws.fedoragsearch.server.errors.ConfigException;
  * @version
  */
 public class Config {
+	///
+	public enum IndexMode {
+		STANDARD(0), 
+	    BULK_REINDEX(1);
+	    
+		private int code;
+		
+		private IndexMode(int c) {
+			code = c;
+		}
+		
+		int showCode() {
+			return code;
+		}	    
+	}
     
     private static Config currentConfig = null;
     
@@ -87,8 +103,6 @@ public class Config {
 	private static boolean wsddDeployed = false;
     
     private String configName = null;
-    
-    private static String escidocHome = null;
     
     //MIH use default config-name
     private static String defaultConfigName = null;
@@ -129,7 +143,9 @@ public class Config {
     
     private StringBuffer errors = null;
     
-    private final Logger logger = LoggerFactory.getLogger(Config.class);
+    private static Map<String, Analyzer> analyzers = new HashMap<String, Analyzer>();
+    
+    private final Logger logger = Logger.getLogger(Config.class);
 
     /**
      * The configure operation creates a new current Config object.
@@ -141,7 +157,6 @@ public class Config {
     		configName = getDefaultConfigName();
     	}
         currentConfig = new Config(configName);
-        currentConfig.checkConfig();
         configs.put(configName, currentConfig);
     }
 
@@ -165,7 +180,6 @@ public class Config {
         if (currentConfig == null) {
             //MIH use default config-name
             currentConfig = new Config(getDefaultConfigName());
-            currentConfig.checkConfig();
         }
         return currentConfig;
     }
@@ -174,7 +188,6 @@ public class Config {
     	Config config = (Config)configs.get(configName);
         if (config == null) {
         	config = new Config(configName);
-        	config.checkConfig();
             configs.put(configName, config);
         }
         return config;
@@ -189,17 +202,6 @@ public class Config {
             try {
                 defaultConfigName = EscidocConfiguration.getInstance()
                 .get(EscidocConfiguration.SEARCH_PROPERTIES_DIRECTORY, "search/config");
-                if (!defaultConfigName.startsWith("/")) {
-                	defaultConfigName = "/" + defaultConfigName;
-                }
-                if (!EscidocConfiguration.getInstance().getEscidocHome().isEmpty()) {
-                	escidocHome = EscidocConfiguration.getInstance().getEscidocHome();
-                	if (!escidocHome.endsWith("/")) {
-                		escidocHome += "/";
-                	}
-                	escidocHome += "conf";
-                	defaultConfigName = escidocHome + defaultConfigName;
-                }
             } catch (IOException e) {
                 throw new ConfigException(e.getMessage());
             }
@@ -217,7 +219,12 @@ public class Config {
         
 //      Get fedoragsearch properties
         try {
-            InputStream propStream = getResourceInputStream("/fedoragsearch.properties");
+            InputStream propStream = Config.class
+            .getResourceAsStream("/"+configName+"/fedoragsearch.properties");
+            if (propStream == null) {
+                throw new ConfigException(
+                "*** "+configName+"/fedoragsearch.properties not found in classpath");
+            }
             fgsProps = new Properties();
             fgsProps.load(propStream);
             propStream.close();
@@ -240,20 +247,22 @@ public class Config {
             if (defaultRepositoryName == null)
                 defaultRepositoryName = repositoryName;
             try {
-            	InputStream propStream = null;
-            	try {
-                    propStream = getResourceInputStream("/repository/" + repositoryName + "/repository.properties");
-            	} catch (ConfigException e) {
-                    errors.append("\n" + e.getMessage());
-            	}
-                Properties props = new Properties();
-                props.load(propStream);
-                propStream.close();
-                //MIH
-                convertProperties(props);
-                if (logger.isInfoEnabled())
-                    logger.info(configName+"/repository/" + repositoryName + "/repository.properties=" + props.toString());
-                repositoryNameToProps.put(repositoryName, props);
+                InputStream propStream = Config.class
+                .getResourceAsStream("/"+configName+"/repository/" + repositoryName + "/repository.properties");
+                if (propStream != null) {
+                    Properties props = new Properties();
+                    props.load(propStream);
+                    propStream.close();
+                    //MIH
+                    convertProperties(props);
+                    if (logger.isInfoEnabled())
+                        logger.info("/"+configName+"/repository/" + repositoryName + "/repository.properties=" + props.toString());
+                    repositoryNameToProps.put(repositoryName, props);
+                }
+                else {
+                    errors.append("\n*** "+configName+"/repository/" + repositoryName
+                            + "/repository.properties not found in classpath");
+                }
             } catch (IOException e) {
                 errors.append("\n*** Error loading "+configName+"/repository/" + repositoryName
                         + ".properties:\n" + e.toString());
@@ -270,21 +279,23 @@ public class Config {
             if (defaultIndexName == null)
                 defaultIndexName = indexName;
             try {
-            	InputStream propStream = null;
-            	try {
-                    propStream = getResourceInputStream("/index/" + indexName + "/index.properties");
-            	} catch (ConfigException e) {
-                    errors.append("\n" + e.getMessage());
-            	}
-                Properties props = new Properties();
-                props = new Properties();
-                props.load(propStream);
-                propStream.close();
-                //MIH
-                convertProperties(props);
-                if (logger.isInfoEnabled())
-                    logger.info(configName+"/index/" + indexName + "/index.properties=" + props.toString());
-                indexNameToProps.put(indexName, props);
+                InputStream propStream = Config.class
+                .getResourceAsStream("/"+configName+"/index/" + indexName + "/index.properties");
+                if (propStream != null) {
+                    Properties props = new Properties();
+                    props = new Properties();
+                    props.load(propStream);
+                    propStream.close();
+                    //MIH
+                    convertProperties(props);
+                    if (logger.isInfoEnabled())
+                        logger.info("/"+configName+"/index/" + indexName + "/index.properties=" + props.toString());
+                    indexNameToProps.put(indexName, props);
+                }
+                else {
+                    errors.append("\n*** "+configName+"/index/" + indexName
+                            + "/index.properties not found in classpath");
+                }
             } catch (IOException e) {
                 errors.append("\n*** Error loading "+configName+"/index/" + indexName
                         + "/index.properties:\n"+e.toString());
@@ -292,6 +303,7 @@ public class Config {
         }
         if (logger.isDebugEnabled())
             logger.debug("config created configName="+configName+" errors="+errors.toString());
+    	checkConfig();
     }
   
     private void checkConfig() throws ConfigException {
@@ -373,54 +385,56 @@ public class Config {
     		while (updaterNames.hasMoreTokens()) {
     			String updaterName = updaterNames.nextToken();
     			try {
-                	InputStream propStream = null;
-                	try {
-        				propStream =
-        					getResourceInputStream("/updater/" + updaterName
-        							+ "/updater.properties");
-                	} catch (ConfigException e) {
-                        errors.append("\n" + e.getMessage());
-                	}
-					Properties props = new Properties();
-					props.load(propStream);
-					propStream.close();
+    				InputStream propStream =
+    					Config.class.getResourceAsStream("/" + configName
+    							+ "/updater/" + updaterName
+    							+ "/updater.properties");
+    				if (propStream != null) {
+    					Properties props = new Properties();
+    					props.load(propStream);
+    					propStream.close();
 
-		            //MIH
-		            convertProperties(props);
-					if (logger.isInfoEnabled()) {
-						logger.info(configName + "/updater/"
-								+ updaterName + "/updater.properties="
-								+ props.toString());
-					}
+    		            //MIH
+    		            convertProperties(props);
+    					if (logger.isInfoEnabled()) {
+    						logger.info("/" + configName + "/updater/"
+    								+ updaterName + "/updater.properties="
+    								+ props.toString());
+    					}
 
-					// Check properties
-					String propsNamingFactory = props.getProperty("java.naming.factory.initial");
-					String propsProviderUrl = props.getProperty("java.naming.provider.url");
-					String propsConnFactory = props.getProperty("connection.factory.name");
-					String propsClientId = props.getProperty("client.id");
+    					// Check properties
+    					String propsNamingFactory = props.getProperty("java.naming.factory.initial");
+    					String propsProviderUrl = props.getProperty("java.naming.provider.url");
+    					String propsConnFactory = props.getProperty("connection.factory.name");
+    					String propsClientId = props.getProperty("client.id");
 
-					if(propsNamingFactory == null) {
-						errors.append("\n*** java.naming.factory.initial not provided in "
-								+ configName + "/updater/" + updaterName
-								+ "/updater.properties");
-					}
-					if(propsProviderUrl == null) {
-						errors.append("\n*** java.naming.provider.url not provided in "
-								+ configName + "/updater/" + updaterName
-								+ "/updater.properties");
-					}
-					if(propsConnFactory == null) {
-						errors.append("\n*** connection.factory.name not provided in "
-								+ configName + "/updater/" + updaterName
-								+ "/updater.properties");
-					}
-					if(propsClientId == null) {
-						errors.append("\n*** client.id not provided in "
-								+ configName + "/updater/" + updaterName
-								+ "/updater.properties");
-					}
+    					if(propsNamingFactory == null) {
+    						errors.append("\n*** java.naming.factory.initial not provided in "
+    								+ configName + "/updater/" + updaterName
+    								+ "/updater.properties");
+    					}
+    					if(propsProviderUrl == null) {
+    						errors.append("\n*** java.naming.provider.url not provided in "
+    								+ configName + "/updater/" + updaterName
+    								+ "/updater.properties");
+    					}
+    					if(propsConnFactory == null) {
+    						errors.append("\n*** connection.factory.name not provided in "
+    								+ configName + "/updater/" + updaterName
+    								+ "/updater.properties");
+    					}
+    					if(propsClientId == null) {
+    						errors.append("\n*** client.id not provided in "
+    								+ configName + "/updater/" + updaterName
+    								+ "/updater.properties");
+    					}
 
-					updaterNameToProps.put(updaterName, props);
+    					updaterNameToProps.put(updaterName, props);
+    				}
+    				else {
+    					errors.append("\n*** "+configName+"/updater/" + updaterName
+    							+ "/updater.properties not found in classpath");
+    				}
     			} catch (IOException e) {
     				errors.append("\n*** Error loading "+configName+"/updater/" + updaterName
     						+ ".properties:\n" + e.toString());
@@ -465,7 +479,7 @@ public class Config {
     		String repositoryName = (String)repositoryNames.nextElement();
     		Properties props = (Properties)repositoryNameToProps.get(repositoryName);
             if (logger.isDebugEnabled())
-                logger.debug(configName+"/repository/" + repositoryName + "/repository.properties=" + props.toString());
+                logger.debug("/"+configName+"/repository/" + repositoryName + "/repository.properties=" + props.toString());
     		
 //  		Check for unknown properties, indicating typos or wrong property names
     		String[] reposPropNames = {
@@ -498,7 +512,7 @@ public class Config {
 //    		}
 
 //  		Check result stylesheets
-    		checkResultStylesheet("/repository/"+repositoryName, props, "fgsrepository.defaultGetRepositoryInfoResultXslt");
+    		checkResultStylesheet("repository/"+repositoryName, props, "fgsrepository.defaultGetRepositoryInfoResultXslt");
     	}
 
 //  	Check index properties
@@ -507,7 +521,7 @@ public class Config {
     		String indexName = (String)indexNames.nextElement();
     		Properties props = (Properties)indexNameToProps.get(indexName);
             if (logger.isDebugEnabled())
-                logger.debug(configName+"/index/" + indexName + "/index.properties=" + props.toString());
+                logger.debug("/"+configName+"/index/" + indexName + "/index.properties=" + props.toString());
     		
 //  		Check for unknown properties, indicating typos or wrong property names
     		String[] indexPropNames = {
@@ -530,6 +544,7 @@ public class Config {
     				"fgsindex.maxBufferedDocs",
     				"fgsindex.mergeFactor",
     				"fgsindex.ramBufferSizeMb",
+    				"fgsindex.indexMode",
     				"fgsindex.defaultWriteLockTimeout",
     				"fgsindex.defaultSortFields",
     				"fgsindex.uriResolver"
@@ -580,15 +595,15 @@ public class Config {
     		}
 
 //  		Check result stylesheets
-    		checkResultStylesheet("/index/"+indexName, props, 
+    		checkResultStylesheet("index/"+indexName, props, 
     		"fgsindex.defaultUpdateIndexDocXslt");
-    		checkResultStylesheet("/index/"+indexName, props, 
+    		checkResultStylesheet("index/"+indexName, props, 
     		"fgsindex.defaultUpdateIndexResultXslt");
-    		checkResultStylesheet("/index/"+indexName, props, 
+    		checkResultStylesheet("index/"+indexName, props, 
     		"fgsindex.defaultGfindObjectsResultXslt");
-    		checkResultStylesheet("/index/"+indexName, props, 
+    		checkResultStylesheet("index/"+indexName, props, 
     		"fgsindex.defaultBrowseIndexResultXslt");
-    		checkResultStylesheet("/index/"+indexName, props, 
+    		checkResultStylesheet("index/"+indexName, props, 
     		"fgsindex.defaultGetIndexInfoResultXslt");
 
 //  		Check indexDir
@@ -611,6 +626,13 @@ public class Config {
     					Analyzer a = (Analyzer) analyzerClass
     					.getConstructor(new Class[] {})
     					.newInstance(new Object[] {});
+    					
+    					if (a instanceof EscidocAnalyzer && getIndexMode(indexName) == IndexMode.BULK_REINDEX) {
+    						((EscidocAnalyzer)a).setIndexMode(getIndexMode(indexName).showCode());
+    						logger.info("Setting indexMode BULK_REINDEX for analyzer " + a);
+    					}
+    					
+    					analyzers.put(indexName, a); 
     				} catch (InstantiationException e) {
     					errors.append("\n*** "+configName+"/index/"+indexName+" "+analyzer
     							+ ": fgsindex.analyzer="+analyzer
@@ -739,7 +761,7 @@ public class Config {
     
     private void checkRestStylesheet(String propName) {
         String propValue = fgsProps.getProperty(propName);
-        String configPath = "/rest/"+propValue+".xslt";
+        String configPath = "/"+configName+"/rest/"+propValue+".xslt";
         //MIH: stylesheet-path may be an url
         InputStream stylesheet = null;
         if (propValue.startsWith("http")) {
@@ -747,18 +769,17 @@ public class Config {
                 stylesheet = getResourceFromUrl(propValue);
             } catch (ConfigException e) {}
         } else {
-        	try {
-                stylesheet = getResourceInputStream(configPath);
-        	} catch (ConfigException e) {
-                errors.append("\n" + e.getMessage());
-        	}
+            stylesheet = Config.class.getResourceAsStream(configPath);
         }
-        checkStylesheet(configPath, stylesheet);
+        if (stylesheet==null) {
+            errors.append("\n*** Rest stylesheet "+propName+"="+propValue+" not found");
+        } else
+            checkStylesheet(configPath, stylesheet);
     }
     
     private void checkResultStylesheet(String xsltPath, Properties props, String propName) {
         String propValue = props.getProperty(propName);
-        String configPath = xsltPath+"/"+propValue+".xslt";
+        String configPath = "/"+configName+"/"+xsltPath+"/"+propValue+".xslt";
         //MIH: stylesheet-path may be an url
         InputStream stylesheet = null;
         if (propValue.startsWith("http")) {
@@ -766,13 +787,14 @@ public class Config {
                 stylesheet = getResourceFromUrl(propValue);
             } catch (ConfigException e) {}
         } else {
-        	try {
-                stylesheet = getResourceInputStream(configPath);
-        	} catch (ConfigException e) {
-                errors.append("\n" + e.getMessage());
-        	}
+            stylesheet = Config.class.getResourceAsStream(configPath);
         }
-        checkStylesheet(configPath, stylesheet);
+        if (stylesheet==null) {
+            errors.append("\n*** Result stylesheet "+configPath + ": " 
+                    + propName + "=" + propValue + " not found");
+        }
+        else
+            checkStylesheet(configPath, stylesheet);
     }
     
     private void checkStylesheet(String configPath, InputStream stylesheet) {
@@ -780,8 +802,18 @@ public class Config {
             logger.debug("checkStylesheet for " + configPath);
         Transformer transformer = null;
         try {
-            //MIH: Explicitly use Xalan Transformer Factory ////////////////////
-        	TransformerFactoryImpl tfactory = new TransformerFactoryImpl();
+            TransformerFactory tfactory = TransformerFactory.newInstance();
+
+            //MIH: Hardcoded workaround if system-property ////////////////////
+            //javax.xml.transform.TransformerFactory was set 
+            //to stax-impl (pubman does that)
+            //Then set Transformer-Factory to xalan-impl
+            String tFactoryImpl = System.getProperty(
+            "javax.xml.transform.TransformerFactory");
+            if (tFactoryImpl != null
+                    && tFactoryImpl.contains("saxon")) {
+                tfactory = new org.apache.xalan.processor.TransformerFactoryImpl();
+            }
             ///////////////////////////////////////////////////////////////////
             //MIH: add hardcoded EscidocUriResolverto avoid more changes in method-signatures
             tfactory.setURIResolver(new de.escidoc.sb.gsearch.xslt.EscidocUriResolver());
@@ -1233,17 +1265,6 @@ public class Config {
     	return maxBufferedDocs;
     }
     
-    public double getRamBufferSize(String indexName) {
-    	double ramBufferSize = IndexWriterConfig.DEFAULT_RAM_BUFFER_SIZE_MB;
-    	
-		try {
-			ramBufferSize = Double.parseDouble(getIndexProps(indexName).getProperty("fgsindex.ramBufferSize"));
-		} catch (NumberFormatException e) {
-		} catch (NullPointerException e) {
-		}
-    	return ramBufferSize;
-    }
-    
     public int getMaxMergeDocs(String indexName) {
     	int maxMergeDocs = 1;
 		try {
@@ -1272,12 +1293,25 @@ public class Config {
     }
     
     public int getRamBufferSizeMb(String indexName) {
-        int ramBufferSizeMb = 1;
+    	int ramBufferSizeMb = 1;
         try {
             ramBufferSizeMb = Integer.parseInt(getIndexProps(indexName).getProperty("fgsindex.ramBufferSizeMb"));
         } catch (NumberFormatException e) {
         }
         return ramBufferSizeMb;
+    }
+    
+    public IndexMode getIndexMode(String indexName) {
+    	IndexMode mode = IndexMode.STANDARD;
+        try {
+            if (Integer.parseInt(getIndexProps(indexName).getProperty("fgsindex.indexMode")) != 0)
+            	mode = IndexMode.BULK_REINDEX;
+            logger.info("Config.getIndexMode returning BULK_REINDEX for " + indexName); 
+        } catch (NumberFormatException e) {
+        	logger.info("Property fgsindex.indexMode not found or not set correctly for index " + indexName 
+        									+ ". Returning " + IndexMode.STANDARD);
+        }
+        return mode;
     }
     
     public String getLuceneDirectoryImplementation(String indexName) {
@@ -1414,20 +1448,13 @@ public class Config {
                 //if property not found
                 //String systemPropertyValue = System.getProperty(systemProperty, "?NOTFOUND{"+systemProperty+"}");
                 String systemPropertyValue = System.getProperty(systemProperty);
-
                 if (systemPropertyValue == null) {
                     try {
                         systemPropertyValue = EscidocConfiguration.getInstance().get(
-                                systemProperty);
+                                systemProperty, "?NOTFOUND{"+systemProperty+"}");
                     } catch (IOException e) {
                         throw new IllegalArgumentException(e);
                     }
-                }
-                if (systemPropertyValue == null) {
-                	systemPropertyValue = System.getenv(systemProperty);
-                }
-                if (systemPropertyValue == null) {
-                	systemPropertyValue = "?NOTFOUND{"+systemProperty+"}";
                 }
         		result = result.substring(0, i) + systemPropertyValue + result.substring(j+1);
     		}
@@ -1508,6 +1535,18 @@ public class Config {
         return this;
     }
     
+    /**
+	 * get Analyzer Object from ClassName.
+	 * 
+	 * @param analyzerClassName
+	 *            name of Analyzer-class.
+	 * @throws GenericSearchException
+	 *             e
+	 */
+	public Analyzer getAnalyzerForIndex(String indexName) {
+		return analyzers.get(indexName);
+	}
+    
     public static void main(String[] args) {
         try {
             Config.getCurrentConfig();
@@ -1516,21 +1555,6 @@ public class Config {
             // TODO Auto-generated catch block
             e.printStackTrace();
         }
-    }
-    
-    public InputStream getResourceInputStream(final String path) throws ConfigException{
-    	if (escidocHome != null) {
-    		try {
-        		return new FileInputStream(getConfigName() + path);
-    		} catch (FileNotFoundException e) {
-                throw new ConfigException("*** " + path + " not found");
-    		}
-    	}
-    	InputStream in = Config.class.getResourceAsStream(getConfigName() + path);
-    	if (in == null) {
-    		throw new ConfigException("*** " + path + " not found in classpath");
-    	}
-    	return in;
     }
     
 }

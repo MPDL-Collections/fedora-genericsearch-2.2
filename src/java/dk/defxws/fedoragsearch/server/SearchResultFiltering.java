@@ -7,6 +7,7 @@
  */
 package dk.defxws.fedoragsearch.server;
 
+import fedora.server.management.FedoraAPIM;
 
 /**
  * 

@@ -7,14 +7,13 @@
 	<classpathentry kind="lib" path="lib/jrdf-0.3.4.3.jar"/>
 	<classpathentry kind="lib" path="lib/jsr173_1.0_api.jar"/>
 	<classpathentry kind="lib" path="lib/junit-4.5.jar"/>
-	<classpathentry kind="lib" path="lib/lib.properties"/>
 	<classpathentry kind="lib" path="lib/mail.jar"/>
 	<classpathentry kind="lib" path="lib/saaj-api-1.3.jar"/>
 	<classpathentry kind="lib" path="lib/servlet-api.jar"/>
 	<classpathentry kind="lib" path="lib/sjsxp.jar"/>
 	<classpathentry kind="lib" path="lib/escidoc/woodstox/jsr173_1.0_api.jar"/>
 	<classpathentry kind="lib" path="lib/escidoc/escidoc-analyzers.jar"/>
-	<classpathentry kind="lib" path="lib/activemq-all-5.4.0.jar"/>
+	<classpathentry kind="lib" path="lib/activemq-all-5.4.0.jar" sourcepath="C:/Users/haarlae1/.m2/repository/org/apache/activemq/activemq-all/5.4.0/activemq-all-5.4.0-sources.jar"/>
 	<classpathentry kind="lib" path="lib/commons-httpclient-3.1.jar"/>
 	<classpathentry kind="lib" path="lib/axiom-api-1.2.5.jar"/>
 	<classpathentry kind="lib" path="lib/axiom-impl-1.2.5.jar"/>
@@ -39,7 +38,6 @@
 	<classpathentry kind="lib" path="lib/xmlunit-1.3.jar"/>
 	<classpathentry kind="lib" path="lib/fedora-rest-client/fedora-client-0.1.3.jar" sourcepath="/fedora-client/src/main/java"/>
 	<classpathentry kind="lib" path="lib/lucene-demos-3.0.3.jar"/>
-	<classpathentry kind="lib" path="lib/pdfbox-1.6.0.jar"/>
 	<classpathentry kind="lib" path="lib/escidoc/slf4j-api-1.6.1.jar"/>
 	<classpathentry kind="lib" path="lib/escidoc/poi-3.8-beta4-20110826.jar"/>
 	<classpathentry kind="lib" path="lib/escidoc/poi-ooxml-3.8-beta4-20110826.jar"/>
@@ -50,7 +48,12 @@
 	<classpathentry kind="lib" path="lib/lucene-core-3.4.0.jar"/>
 	<classpathentry kind="lib" path="lib/lucene-highlighter-3.4.0.jar"/>
 	<classpathentry kind="lib" path="lib/escidoc/lucene-analyzers-3.4.0.jar"/>
-	<classpathentry kind="con" path="org.eclipse.jdt.launching.JRE_CONTAINER/org.eclipse.jdt.internal.debug.ui.launcher.StandardVMType/jdk1.6.0_38"/>
+	<classpathentry kind="con" path="org.eclipse.jdt.launching.JRE_CONTAINER"/>
 	<classpathentry kind="lib" path="lib/escidoc/lucene-gosen-1.2.1-naist-chasen.jar"/>
+	<classpathentry kind="lib" path="lib/log4j-1.2.15.jar"/>
+	<classpathentry kind="lib" path="lib/ehcache-core-2.4.7.jar"/>
+	<classpathentry kind="lib" path="lib/pdfbox-1.4.0.jar"/>
+	<classpathentry kind="lib" path="lib/pdfbox-app-1.8.6.jar"/>
+	<classpathentry kind="lib" path="lib/commons-io-2.4.jar"/>
 	<classpathentry kind="output" path="bin"/>
 </classpath>

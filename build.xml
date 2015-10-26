@@ -56,6 +56,7 @@
       <pathelement path="${lib.fedora-messaging-client}"/>
       <pathelement path="${lib.jaxrpc}"/>
       <pathelement path="${lib.junit}"/>
+      <pathelement path="${lib.log4j}"/>
       <pathelement path="${lib.lucene}"/>
       <pathelement path="${lib.lucene-demos}"/>
       <pathelement path="${lib.pdfbox}"/>
@@ -143,15 +144,22 @@
 				<include name="*.gif"/>
 				<include name="*.jpg"/>
 			</fileset>
-		</copy>			
+		</copy>
+		<copy todir="${build.dir}/jsp">
+			<fileset dir="src/jsp"/>
+		</copy>				
 		<copy todir="${build.dir}">
 			<fileset dir="src/sh"/>
 		</copy>
 		<copy file="src/WEB-INF/${web.xml.file}" tofile="${build.dir}/WEB-INF/web.xml" />
+		<copy file="src/WEB-INF/jboss-deployment-structure.xml" tofile="${build.dir}/WEB-INF/jboss-deployment-structure.xml" />
 		<copy file="src/WEB-INF/web-withoutAuthN.xml" todir="${build.dir}/WEB-INF" />
 		<copy file="src/WEB-INF/web-withAuthN.xml" todir="${build.dir}/WEB-INF" />
 		<copy file="src/WEB-INF/server-config.wsdd" todir="${build.dir}/WEB-INF" />
-		<copy file="src/WEB-INF/jboss-deployment-structure.xml" todir="${build.dir}/WEB-INF" />
+		<!--
+		<copy file="src/WEB-INF/log4j.xml" todir="${build.dir}/WEB-INF/classes" />
+		<copy file="src/WEB-INF/jboss-web.xml" todir="${build.dir}/WEB-INF/classes" />
+		-->
 		<copy todir="${plugin.dir}">
 			<fileset dir="bin"/>
 		</copy>
@@ -231,10 +239,11 @@
         <!--ant dir="../FgsConfig" target="prep" inheritAll="false"/-->
 		<delete file="${build.dir}/WEB-INF/web.xml" />
 		<copy file="src/WEB-INF/web-withoutAuthN.xml" tofile="${build.dir}/WEB-INF/web.xml" />
+        <copy file="lib/log4j-1.2.15.jar" tofile="${build.dir}/WEB-INF/lib/log4j-1.2.15.jar" />
 		<copy file="lib/axis-1.4.jar" tofile="${build.dir}/WEB-INF/lib/axis-1.4.jar" />
 		<copy file="lib/fedora-client-3.2.1.jar" tofile="${build.dir}/WEB-INF/lib/fedora-client-3.2.1.jar" />
 		<copy file="lib/fedora-messaging-client-3.1.jar" tofile="${build.dir}/WEB-INF/lib/fedora-messaging-client-3.1.jar" />
-		<copy file="lib/fedora-server-3.2.1.jar" tofile="${build.dir}/WEB-INF/lib/fedora-server-3.1.jar" />
+		<copy file="lib/fedora-server-3.1.jar" tofile="${build.dir}/WEB-INF/lib/fedora-server-3.1.jar" />
         <copy file="lib/escidoc/common.jar" tofile="${build.dir}/WEB-INF/lib/common.jar" />
 
 		<copy file="lib/fedora-rest-client/fedora-client-0.1.3.jar" tofile="${build.dir}/WEB-INF/lib/fedora-client-0.1.3.jar" />
@@ -329,6 +338,7 @@
 		<md-compile srcdir="${junit.src.dir}"
 					destdir="${junit.build.dir}"
 					classpathref="junit.classpath"/>
+        <copy todir="${junit.build.dir}" file="${junit.src.dir}/log4j.xml"/>
 	</target>
 	
 	<target name="junit-all" depends="junit-set-all, junit">

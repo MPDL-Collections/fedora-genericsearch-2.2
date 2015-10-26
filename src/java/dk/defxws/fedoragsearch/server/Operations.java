@@ -21,8 +21,7 @@ public interface Operations {
             String repositoryName,
             String indexName,
             String indexDocXslt,
-            String resultPageXslt,
-            boolean commit) throws java.rmi.RemoteException;
+            String resultPageXslt) throws java.rmi.RemoteException;
     
     public String gfindObjects(
             String query,
@@ -48,5 +47,4 @@ public interface Operations {
     public String getIndexInfo(
             String indexName,
             String resultPageXslt) throws java.rmi.RemoteException;
-
 }

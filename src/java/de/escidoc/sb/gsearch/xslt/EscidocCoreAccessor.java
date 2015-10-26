@@ -38,9 +38,9 @@ import javax.naming.AuthenticationException;
 import javax.xml.parsers.DocumentBuilder;
 import javax.xml.parsers.DocumentBuilderFactory;
 
+import org.apache.commons.codec.binary.StringUtils;
 import org.apache.http.impl.cookie.BasicClientCookie;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+import org.apache.log4j.Logger;
 import org.w3c.dom.Document;
 
 import de.escidoc.core.common.util.configuration.EscidocConfiguration;
@@ -48,7 +48,11 @@ import de.escidoc.core.common.util.service.ConnectionUtility;
 import de.escidoc.core.common.util.stax.StaxParser;
 import de.escidoc.sb.common.Constants;
 import de.escidoc.sb.util.xml.stax.handler.ContainerMembersCountHandler;
+import de.escidoc.sb.util.xml.stax.handler.ContentModelNameHandler;
+import de.escidoc.sb.util.xml.stax.handler.ContextNameHandler;
 import de.escidoc.sb.util.xml.stax.handler.ObjectAttributeHandler;
+import de.escidoc.sb.util.xml.stax.handler.OuHrefHandler;
+import de.escidoc.sb.util.xml.stax.handler.UserNameHandler;
 
 /**
  * Is called from sylesheet that transforms foxml to indexable document. Returns
@@ -72,7 +76,7 @@ public class EscidocCoreAccessor {
 
     static {
         log =
-            LoggerFactory
+            Logger
                 .getLogger(
                 de.escidoc.sb.gsearch.xslt.EscidocCoreAccessor.class);
     }
@@ -158,20 +162,13 @@ public class EscidocCoreAccessor {
         }
         catch (Exception e) {
             log.error("object with uri " + restUri + " not found");
-            log.error("", e);
+            log.error(e);
         }
         return "";
     }
 
     /**
-     * Parse xml as Dom-Document.
-     * Used to fill a xslt-stylesheet-variable with
-     * Example for eSciDoc-xml-content:
-     * <xsl:variable name="FULLTEXT" select="escidoc-core-accessor:getDomDocument('/ir/item/escidoc:124068/components/component/escidoc:124066/content','false')"/>
-     * 	<xsl:for-each select="$FULLTEXT/*[local-name()='test']/*">
-     *      <test><xsl:value-of select="text()"/></test>
-     *  </xsl:for-each>
-     *
+     * Parse xml as Dom-Document
      * @param strXml xml as String
      * @return Document Dom-Document
      */
@@ -213,9 +210,6 @@ public class EscidocCoreAccessor {
 
         if (log.isDebugEnabled()) {
             log.debug("executing EscidocCoreAccessor, getXml");
-        }
-        if (restUri == null || restUri.isEmpty()) {
-        	return "";
         }
         BasicClientCookie cookie = null;
         try {
@@ -294,7 +288,7 @@ public class EscidocCoreAccessor {
         catch (Exception e) {
             log.error("couldnt retrieve member-list for container " 
                                     + containerObjid);
-            log.error("", e);
+            log.error(e);
         }
         return "";
     }

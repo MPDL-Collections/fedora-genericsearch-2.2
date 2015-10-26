@@ -9,8 +9,7 @@ package dk.defxws.fedoragsearch.server;
 
 import java.util.Date;
 
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+import org.apache.log4j.Logger;
 
 /**
  * target for SOAP calls, calls the operationsImpl
@@ -21,7 +20,7 @@ import org.slf4j.LoggerFactory;
 public class SOAPImpl implements Operations {
     
     private static final Logger logger =
-        LoggerFactory.getLogger(SOAPImpl.class);
+        Logger.getLogger(SOAPImpl.class);
     
     public String gfindObjects(
             String query,
@@ -144,8 +143,7 @@ public class SOAPImpl implements Operations {
             String repositoryName,
             String indexName,
             String indexDocXslt,
-            String resultPageXslt,
-            boolean commitWrite)
+            String resultPageXslt)
     throws java.rmi.RemoteException {
     	Date startTime = new Date();
         if (logger.isInfoEnabled())
@@ -158,7 +156,7 @@ public class SOAPImpl implements Operations {
                     " resultPageXslt="+resultPageXslt);
         GenericOperationsImpl ops = (new GenericOperationsImpl());
         ops.init(indexName, getConfig());
-        String result = ops.updateIndex(action, value, repositoryName, indexName, indexDocXslt, resultPageXslt, commitWrite);
+        String result = ops.updateIndex(action, value, repositoryName, indexName, indexDocXslt, resultPageXslt);
         String timeusedms = Long.toString((new Date()).getTime() - startTime.getTime());
         if (logger.isInfoEnabled())
             logger.info("updateIndex" +

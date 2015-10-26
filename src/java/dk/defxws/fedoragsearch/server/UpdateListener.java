@@ -24,8 +24,7 @@ import javax.jms.TextMessage;
 
 import dk.defxws.fedoragsearch.server.errors.ConfigException;
 
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+import org.apache.log4j.Logger;
 
 import fedora.client.messaging.JmsMessagingClient;
 import fedora.client.messaging.MessagingClient;
@@ -46,7 +45,7 @@ import fedora.server.messaging.AtomAPIMMessage;
 public class UpdateListener extends HttpServlet implements MessagingListener {
 
     private static final long serialVersionUID = 1L;
-    private final Logger logger = LoggerFactory.getLogger(UpdateListener.class);
+    private final Logger logger = Logger.getLogger(UpdateListener.class);
     private ArrayList<MessagingClient> messagingClientList =
             new ArrayList<MessagingClient>();
     
@@ -202,7 +201,7 @@ public class UpdateListener extends HttpServlet implements MessagingListener {
                                     repositoryName,
                                     indexName,
                                     indexDocXslt,
-                                    resultPageXslt, true);
+                                    resultPageXslt);
             logger.info("Index updated by notification message, returning:\n"
                       + updateStaus);
         } catch (RemoteException re) {

@@ -20,11 +20,7 @@ import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
 import javax.servlet.ServletException;
 
-import dk.defxws.fedoragsearch.server.utils.IOUtils;
-import dk.defxws.fedoragsearch.server.utils.Stream;
-
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+import org.apache.log4j.Logger;
 
 import dk.defxws.fedoragsearch.server.errors.GenericSearchException;
 
@@ -39,7 +35,7 @@ public class RESTImpl extends HttpServlet {
 	private static final long serialVersionUID = 1L;
 
     private static final Logger logger =
-        LoggerFactory.getLogger(RESTImpl.class);
+        Logger.getLogger(RESTImpl.class);
     
     private Config config;
     
@@ -61,7 +57,6 @@ public class RESTImpl extends HttpServlet {
     private static final String OP_BROWSEINDEX = "browseIndex";
     //MIH: added
     private static final String OP_FLUSHURLRESOURCES = "flushUrlResources";
-
     private static final String PARAM_CONFIGNAME = "configName";
     private static final String PARAM_OPERATION = "operation";
     private static final String PARAM_QUERY = "query";
@@ -77,7 +72,6 @@ public class RESTImpl extends HttpServlet {
     private static final String PARAM_FIELDNAME = "fieldName";
     private static final String PARAM_ACTION = "action";
     private static final String PARAM_VALUE = "value";
-    private static final String PARAM_COMMITINDEXWRITES = "commitWrite";
     
     /** Exactly the same behavior as doGet */
     public void doPost(HttpServletRequest request, HttpServletResponse response)
@@ -126,8 +120,6 @@ public class RESTImpl extends HttpServlet {
             //MIH: added    
             } else if (OP_FLUSHURLRESOURCES.equals(operation)) {
                 resultXml = new StringBuffer(flushUrlResources(request, response));
-
-            
             } else if ("configure".equals(operation)) {
                 resultXml = new StringBuffer(configure(request, response));
             } else if ("getIndexConfigInfo".equals(operation)) {
@@ -150,7 +142,7 @@ public class RESTImpl extends HttpServlet {
             					+ "]]></message></error>");
             resultXml.append("</resultPage>");
             params[1] = e.getMessage();
-            logger.error("", e);
+            logger.error(e);
             //e.printStackTrace();
         }
         String timeusedms = Long.toString((new Date()).getTime() - startTime.getTime());
@@ -159,10 +151,9 @@ public class RESTImpl extends HttpServlet {
         params[5] = request.getRemoteUser();
         params[6] = "SRFTYPE";
         params[7] = config.getSearchResultFilteringType();
-        Stream stream = (new GTransformer()).transform(
-        		"/rest/"+restXslt,
+        resultXml = (new GTransformer()).transform(
+        				config.getConfigName()+"/rest/"+restXslt, 
         				resultXml, params);
-        resultXml = IOUtils.convertStreamToStringBuffer(stream);
 //        if (logger.isDebugEnabled())
 //            logger.debug("after "+restXslt+" result=\n"+resultXml);
         
@@ -279,8 +270,6 @@ public class RESTImpl extends HttpServlet {
             restXslt = config.getDefaultUpdateIndexRestXslt();
         }
         String action = request.getParameter(PARAM_ACTION);
-        boolean commit = request.getParameter(PARAM_COMMITINDEXWRITES) == null 
-        						? true : new Boolean(request.getParameter(PARAM_COMMITINDEXWRITES));
         if (action==null) action="";
         String value = request.getParameter(PARAM_VALUE);
         if (value==null) value="";
@@ -288,7 +277,7 @@ public class RESTImpl extends HttpServlet {
         if (indexDocXslt==null) indexDocXslt="";
         GenericOperationsImpl ops = new GenericOperationsImpl();
         ops.init(request.getRemoteUser(), indexName, config);
-        String result = ops.updateIndex(action, value, repositoryName, indexName, indexDocXslt, resultPageXslt, commit);
+        String result = ops.updateIndex(action, value, repositoryName, indexName, indexDocXslt, resultPageXslt);
         return result;
     }
     

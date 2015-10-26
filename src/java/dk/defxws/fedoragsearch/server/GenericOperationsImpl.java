@@ -17,7 +17,6 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.net.URL;
 import java.net.URLDecoder;
-import java.net.URLEncoder;
 import java.util.Date;
 import java.util.HashMap;
 import java.util.List;
@@ -26,8 +25,7 @@ import java.util.StringTokenizer;
 
 import javax.xml.transform.stream.StreamSource;
 
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+import org.apache.log4j.Logger;
 
 import com.yourmediashelf.fedora.client.FedoraClientException;
 import com.yourmediashelf.fedora.client.FedoraCredentials;
@@ -39,12 +37,7 @@ import com.yourmediashelf.fedora.generated.access.DatastreamType;
 import dk.defxws.fedoragsearch.server.errors.ConfigException;
 import dk.defxws.fedoragsearch.server.errors.FedoraObjectNotFoundException;
 import dk.defxws.fedoragsearch.server.errors.GenericSearchException;
-import dk.defxws.fedoragsearch.server.utils.IOUtils;
-import dk.defxws.fedoragsearch.server.utils.Stream;
-import fedora.client.FedoraClient;
 import fedora.common.Constants;
-import fedora.server.access.FedoraAPIA;
-import fedora.server.management.FedoraAPIM;
 
 /**
  * performs the generic parts of the operations
@@ -55,12 +48,10 @@ import fedora.server.management.FedoraAPIM;
 public class GenericOperationsImpl implements Operations {
     
     private static final Logger logger =
-        LoggerFactory.getLogger(GenericOperationsImpl.class);
+        Logger.getLogger(GenericOperationsImpl.class);
 
-    private static final Map fedoraClients = new HashMap();
-
-    private static final Map fedoraRestClients = new HashMap();
-
+    private static final Map<String, Object> fedoraRestClients = new HashMap<String, Object>();
+    
     protected String fgsUserName;
     protected String indexName;
     protected Config config;
@@ -73,40 +64,9 @@ public class GenericOperationsImpl implements Operations {
     
     protected byte[] foxmlRecord;
     protected String dsID;
+    protected byte[] ds;
     protected String dsText;
     protected String[] params = null;
-
-    private static FedoraClient getFedoraClient(
-    		String repositoryName,
-    		String fedoraSoap,
-    		String fedoraUser,
-    		String fedoraPass)
-            throws GenericSearchException {
-        try {
-            String baseURL = getBaseURL(fedoraSoap);
-            String user = fedoraUser; 
-            String clientId = user + "@" + baseURL;
-            synchronized (fedoraClients) {
-                if (fedoraClients.containsKey(clientId)) {
-                    return (FedoraClient) fedoraClients.get(clientId);
-                } else {
-                    FedoraClient client = new FedoraClient(baseURL,
-                            user, fedoraPass);
-                    //MIH: modifiy connection-parameters//////////////////////
-                    client.MAX_CONNECTIONS_PER_HOST = 1500;
-                    client.MAX_TOTAL_CONNECTIONS = 1500;
-                    client.SOCKET_TIMEOUT_SECONDS = 1800;
-                    client.TIMEOUT_SECONDS = 1800;
-                    //////////////////////////////////////////////////////////
-                    fedoraClients.put(clientId, client);
-                    return client;
-                }
-            }
-        } catch (Exception e) {
-            throw new GenericSearchException("Error getting FedoraClient"
-                    + " for repository: " + repositoryName, e);
-        }
-    }
 
     //MIH: Added for REST-Access
     private static com.yourmediashelf.fedora.client.FedoraClient getRestFedoraClient(
@@ -135,61 +95,6 @@ public class GenericOperationsImpl implements Operations {
         }
     }
 
-    private static String getBaseURL(String fedoraSoap)
-            throws Exception {
-        final String end = "/services";
-        String baseURL = fedoraSoap;
-        if (fedoraSoap.endsWith(end)) {
-            return fedoraSoap.substring(0, fedoraSoap.length() - end.length());
-        } else {
-            throw new Exception("Unable to determine baseURL from fedoraSoap"
-                    + " value (expected it to end with '" + end + "'): "
-                    + fedoraSoap);
-        }
-    }
-
-    private static FedoraAPIA getAPIA(
-    		String repositoryName,
-    		String fedoraSoap,
-    		String fedoraUser,
-    		String fedoraPass,
-    		String trustStorePath,
-    		String trustStorePass)
-    throws GenericSearchException {
-    	if (trustStorePath!=null)
-    		System.setProperty("javax.net.ssl.trustStore", trustStorePath);
-    	if (trustStorePass!=null)
-    		System.setProperty("javax.net.ssl.trustStorePassword", trustStorePass);
-    	FedoraClient client = getFedoraClient(repositoryName, fedoraSoap, fedoraUser, fedoraPass);
-    	try {
-    		return client.getAPIA();
-    	} catch (Exception e) {
-    		throw new GenericSearchException("Error getting API-A stub"
-    				+ " for repository: " + repositoryName, e);
-    	}
-    }
-    
-    private static FedoraAPIM getAPIM(
-    		String repositoryName,
-    		String fedoraSoap,
-    		String fedoraUser,
-    		String fedoraPass,
-    		String trustStorePath,
-    		String trustStorePass)
-    throws GenericSearchException {
-    	if (trustStorePath!=null)
-    		System.setProperty("javax.net.ssl.trustStore", trustStorePath);
-    	if (trustStorePass!=null)
-    		System.setProperty("javax.net.ssl.trustStorePassword", trustStorePass);
-    	FedoraClient client = getFedoraClient(repositoryName, fedoraSoap, fedoraUser, fedoraPass);
-    	try {
-    		return client.getAPIM();
-    	} catch (Exception e) {
-    		throw new GenericSearchException("Error getting API-M stub"
-    				+ " for repository: " + repositoryName, e);
-    	}
-    }
-    
     public void init(String indexName, Config currentConfig) {
     	init(null, indexName, currentConfig);
     }
@@ -286,22 +191,23 @@ public class GenericOperationsImpl implements Operations {
                     " repositoryName="+repositoryName+
                     " resultPageXslt="+resultPageXslt);
         InputStream repositoryStream =  null;
-        String repositoryInfoPath = "/repository/"+config.getRepositoryName(repositoryName)+"/repositoryInfo.xml";
+        String repositoryInfoPath = "/"+config.getConfigName()+"/repository/"+config.getRepositoryName(repositoryName)+"/repositoryInfo.xml";
         try {
-            repositoryStream =  Config.getCurrentConfig().getResourceInputStream(repositoryInfoPath);
+            repositoryStream =  this.getClass().getResourceAsStream(repositoryInfoPath);
             if (repositoryStream == null) {
                 throw new GenericSearchException("Error "+repositoryInfoPath+" not found in classpath");
             }
         } catch (IOException e) {
             throw new GenericSearchException("Error "+repositoryInfoPath+" not found in classpath", e);
         }
-        String xsltPath = "/repository/"+config.getRepositoryName(repositoryName)+"/"
+        String xsltPath = config.getConfigName()
+        		+"/repository/"+config.getRepositoryName(repositoryName)+"/"
         		+config.getRepositoryInfoResultXslt(repositoryName, resultPageXslt);
-        Stream sb = (new GTransformer()).transform(
+        StringBuffer sb = (new GTransformer()).transform(
         		xsltPath,
                 new StreamSource(repositoryStream),
                 new String[] {});
-        return IOUtils.convertStreamToStringBuffer(sb).toString();
+        return sb.toString();
     }
     
     public String getIndexInfo(
@@ -320,8 +226,7 @@ public class GenericOperationsImpl implements Operations {
             String repositoryNameParam,
             String indexNames,
             String indexDocXslt,
-            String resultPageXslt,
-            boolean commit)
+            String resultPageXslt)
     throws java.rmi.RemoteException {
         if (logger.isDebugEnabled())
             logger.debug("updateIndex" +
@@ -331,25 +236,25 @@ public class GenericOperationsImpl implements Operations {
                     " indexNames="+indexNames+
                     " indexDocXslt="+indexDocXslt+
                     " resultPageXslt="+resultPageXslt);
-        StringBuffer resultXml = new StringBuffer();
+        StringBuffer resultXml = new StringBuffer(); 
         String repositoryName = repositoryNameParam;
         if (repositoryNameParam==null || repositoryNameParam.equals(""))
         	repositoryName = config.getRepositoryName(repositoryName);
         resultXml.append("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n");
         resultXml.append("<resultPage");
         resultXml.append(" operation=\"updateIndex\"");
-        resultXml.append(" action=\"" + action + "\"");
-        resultXml.append(" value=\"" + value + "\"");
-        resultXml.append(" repositoryName=\"" + repositoryName + "\"");
-        resultXml.append(" indexNames=\"" + indexNames + "\"");
-        resultXml.append(" resultPageXslt=\"" + resultPageXslt + "\"");
-        resultXml.append(" dateTime=\"" + new Date() + "\"");
+        resultXml.append(" action=\""+action+"\"");
+        resultXml.append(" value=\""+value+"\"");
+        resultXml.append(" repositoryName=\""+repositoryName+"\"");
+        resultXml.append(" indexNames=\""+indexNames+"\"");
+        resultXml.append(" resultPageXslt=\""+resultPageXslt+"\"");
+        resultXml.append(" dateTime=\""+new Date()+"\"");
         resultXml.append(">\n");
         StringTokenizer st = new StringTokenizer(config.getIndexNames(indexNames));
         while (st.hasMoreTokens()) {
             String indexName = st.nextToken();
             Operations ops = config.getOperationsImpl(fgsUserName, indexName);
-            resultXml.append(ops.updateIndex(action, value, repositoryName, indexName, indexDocXslt, resultPageXslt, commit));
+            resultXml.append(ops.updateIndex(action, value, repositoryName, indexName, indexDocXslt, resultPageXslt));
         }
         resultXml.append("</resultPage>\n");
         if (logger.isDebugEnabled())
@@ -362,7 +267,6 @@ public class GenericOperationsImpl implements Operations {
             String repositoryName)
     throws java.rmi.RemoteException {
         
-        long time = System.currentTimeMillis();
         if (logger.isInfoEnabled())
             logger.info("getFoxmlFromPid" +
                     " pid="+pid +
@@ -372,19 +276,7 @@ public class GenericOperationsImpl implements Operations {
         if(fedoraVersion != null && fedoraVersion.startsWith("2.")) {
             format = Constants.FOXML1_0_LEGACY;
         }
-//        FedoraAPIM apim = getAPIM(repositoryName, 
-//        		config.getFedoraSoap(repositoryName), 
-//        		config.getFedoraUser(repositoryName), 
-//        		config.getFedoraPass(repositoryName), 
-//        		config.getTrustStorePath(repositoryName), 
-//        		config.getTrustStorePass(repositoryName) );
-//        
-//        try {
-//        	foxmlRecord = apim.export(pid, format, "public");
-//        } catch (RemoteException e) {
-//        	throw new FedoraObjectNotFoundException("Fedora Object "+pid+" not found at "+repositoryName, e);
-//        }
-    	//MIH: REST
+
         InputStream inStr = null;
         ByteArrayOutputStream out = null;
         try {
@@ -407,9 +299,7 @@ public class GenericOperationsImpl implements Operations {
                 out.flush();
                 foxmlRecord = out.toByteArray();
             }
-            if (logger.isDebugEnabled()) {
-        		logger.debug("getting foxml needed " + (System.currentTimeMillis() - time));
-            }
+
         } catch (FedoraClientException e) {
         	throw new FedoraObjectNotFoundException("Fedora Object "+pid+" not found at "+repositoryName, e);
         } catch (IOException e) {
@@ -428,18 +318,12 @@ public class GenericOperationsImpl implements Operations {
         }
     }
     
-    public Stream getDatastreamText(
+    public String getDatastreamText(
             String pid,
             String repositoryName,
             String dsId)
     throws GenericSearchException {
-//    	return getDatastreamText(pid, repositoryName, dsId,
-//                		config.getFedoraSoap(repositoryName), 
-//                		config.getFedoraUser(repositoryName), 
-//                		config.getFedoraPass(repositoryName), 
-//                		config.getTrustStorePath(repositoryName), 
-//                		config.getTrustStorePass(repositoryName) );
-    	//MIH: REST
+
     	return getDatastreamText(pid, repositoryName, dsId,
         		config.getFedoraRest(repositoryName), 
         		config.getFedoraUser(repositoryName), 
@@ -448,7 +332,7 @@ public class GenericOperationsImpl implements Operations {
         		config.getTrustStorePass(repositoryName) );
     }
     
-    public Stream getDatastreamText(
+    public String getDatastreamText(
             String pid,
             String repositoryName,
             String dsId,
@@ -458,76 +342,80 @@ public class GenericOperationsImpl implements Operations {
     		String trustStorePath,
     		String trustStorePass)
     throws GenericSearchException {
-        long time = System.currentTimeMillis();
-        if (logger.isInfoEnabled())
-            logger.info("getDatastreamText"
+    	
+         logger.info("getDatastreamText"
             		+" pid="+pid
             		+" repositoryName="+repositoryName
             		+" dsId="+dsId
             		+" fedoraSoap="+fedoraSoap
             		+" trustStorePath="+trustStorePath);
-        Stream dsBuffer = new Stream();
+        
+        if (dsId == null)
+        	return "";
+        
+        if (DataStreamCache.getInstance().containsKey(pid, dsId)) {
+        	String s = DataStreamCache.getInstance().get(pid, dsId);
+			if (logger.isInfoEnabled()) {
+				logger.info("Found in dataStreamCache " + "(" + pid + "," + dsId + ")");											
+			}
+        	return s;
+        }
+        
+        StringBuffer dsBuffer = new StringBuffer();
         String mimetype = "";
-    	FedoraResponse response = null;
-        if (dsId != null) {
-//            try {
-//                FedoraAPIA apia = getAPIA(
-//                		repositoryName, 
-//                		fedoraSoap, 
-//                		fedoraUser,
-//                		fedoraPass,
-//                		trustStorePath,
-//                		trustStorePass );
-//                MIMETypedStream mts = apia.getDatastreamDissemination(pid, 
-//                        dsId, null);
-//                if (mts==null) return "";
-//                ds = mts.getStream();
-//                mimetype = mts.getMIMEType();
-//            } catch (AxisFault e) {
-//                if (e.getFaultString().indexOf("DatastreamNotFoundException")>-1 ||
-//                        e.getFaultString().indexOf("DefaulAccess")>-1)
-//                    return new String();
-//                else
-//                    throw new GenericSearchException(e.getFaultString()+": "+e.toString());
-//            } catch (RemoteException e) {
-//                throw new GenericSearchException(e.getClass().getName()+": "+e.toString());
-//            }
-        	//MIH: REST
-            try {
-            	com.yourmediashelf.fedora.client.FedoraClient restClient = 
-            		getRestFedoraClient(
-                		repositoryName, 
-                		fedoraSoap, 
-                		fedoraUser,
-                		fedoraPass );
-            	//Workaround because tomcat doesnt support url-encoded / by default
-            	dsId = dsId.replaceAll("\\/","\\|");
-            	response = getDatastreamDissemination(pid, URLEncoder.encode(dsId, de.escidoc.sb.common.Constants.XML_CHARACTER_ENCODING)).execute(restClient);
-                mimetype = response.getMimeType();
-                if (logger.isDebugEnabled()) {
-            		logger.debug("getting datastream dissemination needed " + (System.currentTimeMillis() - time));
+        ds = null;
+
+        InputStream inStr = null;
+        ByteArrayOutputStream out = null;
+        try {
+        	com.yourmediashelf.fedora.client.FedoraClient restClient = 
+        		getRestFedoraClient(
+            		repositoryName, 
+            		fedoraSoap, 
+            		fedoraUser,
+            		fedoraPass );
+        	FedoraResponse response = getDatastreamDissemination(pid, dsId).execute(restClient);
+            inStr = response.getEntityInputStream();
+            out = new ByteArrayOutputStream();
+            if (inStr != null) {
+                byte[] bytes = new byte[0xFFFF];
+                int i = -1;
+                while ((i = inStr.read(bytes)) > -1) {
+                    out.write(bytes, 0, i);
                 }
-            } catch (Exception e) {
-    			if (Boolean.parseBoolean(Config.getCurrentConfig()
-    					.getIgnoreTextExtractionErrors())) {
-    				logger.warn("couldnt get fulltext: " + e.toString());
-    				Stream stream = new Stream();
-    				try {
-        				stream.write("textfromfilenotextractable".getBytes(
-        						de.escidoc.sb.common.Constants.XML_CHARACTER_ENCODING));
-        				stream.lock();
-    				}
-    				catch (Exception ex) {
-    					logger.error("couldnt write error-stream " + ex.toString());
-    				}
-    				return stream;
-    			} else {
-                    throw new GenericSearchException(e.getClass().getName()+": "+e.toString());
-    			}
+                out.flush();
+                ds = out.toByteArray();
+            }
+            mimetype = response.getMimeType();
+
+        } catch (Exception e) {
+			if (Boolean.parseBoolean(Config.getCurrentConfig()
+					.getIgnoreTextExtractionErrors())) {
+				logger.warn(e);
+				return "textfromfilenotextractable textfrompdffilenotextractable";
+			} else {
+                throw new GenericSearchException(e.getClass().getName()+": "+e.toString());
+			}
+        } finally {
+            if (inStr != null) {
+                try {
+                    inStr.close();
+                } catch (IOException e) {}
+            }
+            if (out != null) {
+                try {
+                    out.close();
+                } catch (IOException e) {}
             }
         }
-        if (response != null && response.getEntityInputStream() != null) {
-            dsBuffer = (TransformerToText.getText(response.getEntityInputStream(), mimetype));
+        
+        if (ds != null) {
+            dsBuffer = (new TransformerToText().getText(ds, mimetype));
+            DataStreamCache.getInstance().put(pid, dsId, dsBuffer.toString());
+            if (logger.isInfoEnabled()) {
+            	logger.info("Put to dataStreamCache " + "(" + pid + "," + dsId + ")");
+            	logger.info("dataStreamCache size after put <" + DataStreamCache.getInstance().size() + ">");
+            }
         }
         if (logger.isDebugEnabled())
             logger.debug("getDatastreamText" +
@@ -535,21 +423,15 @@ public class GenericOperationsImpl implements Operations {
                     " dsId="+dsId+
                     " mimetype="+mimetype+
                     " dsBuffer="+dsBuffer.toString());
-        return dsBuffer;
+        return dsBuffer.toString();
     }
     
-    public Stream getFirstDatastreamText(
+    public StringBuffer getFirstDatastreamText(
             String pid,
             String repositoryName,
             String dsMimetypes)
     throws GenericSearchException {
-//    	return getFirstDatastreamText(pid, repositoryName, dsMimetypes,
-//            		config.getFedoraSoap(repositoryName), 
-//            		config.getFedoraUser(repositoryName), 
-//            		config.getFedoraPass(repositoryName), 
-//            		config.getTrustStorePath(repositoryName), 
-//            		config.getTrustStorePass(repositoryName));
-    	//MIH: REST
+
     	return getFirstDatastreamText(pid, repositoryName, dsMimetypes,
         		config.getFedoraRest(repositoryName), 
         		config.getFedoraUser(repositoryName), 
@@ -558,7 +440,7 @@ public class GenericOperationsImpl implements Operations {
         		config.getTrustStorePass(repositoryName));
     }
     
-    public Stream getFirstDatastreamText(
+    public StringBuffer getFirstDatastreamText(
             String pid,
             String repositoryName,
             String dsMimetypes,
@@ -568,29 +450,14 @@ public class GenericOperationsImpl implements Operations {
     		String trustStorePath,
     		String trustStorePass)
     throws GenericSearchException {
+    	
         if (logger.isInfoEnabled())
             logger.info("getFirstDatastreamText"
                     +" pid="+pid
             		+" dsMimetypes="+dsMimetypes
             		+" fedoraSoap="+fedoraSoap
             		+" trustStorePath="+trustStorePath);
-        Stream dsBuffer = new Stream();
-//        Datastream[] dsds = null;
-//        try {
-//            FedoraAPIM apim = getAPIM(
-//            		repositoryName, 
-//            		fedoraSoap, 
-//            		fedoraUser,
-//            		fedoraPass,
-//            		trustStorePath,
-//            		trustStorePass );
-//            dsds = apim.getDatastreams(pid, null, "A");
-//        } catch (AxisFault e) {
-//            throw new GenericSearchException(e.getClass().getName()+": "+e.toString());
-//        } catch (RemoteException e) {
-//            throw new GenericSearchException(e.getClass().getName()+": "+e.toString());
-//        }
-        //MIH: REST
+        StringBuffer dsBuffer = new StringBuffer();
         List<DatastreamType> datastreams = null;
         try {
         	com.yourmediashelf.fedora.client.FedoraClient restClient = 
@@ -622,25 +489,10 @@ public class GenericOperationsImpl implements Operations {
                 }
             }
         }
-    	FedoraResponse response = null;
+        ds = null;
         if (dsID != null) {
-//            try {
-//                FedoraAPIA apia = getAPIA(
-//                		repositoryName, 
-//                		fedoraSoap, 
-//                		fedoraUser,
-//                		fedoraPass,
-//                		trustStorePath,
-//                		trustStorePass );
-//                MIMETypedStream mts = apia.getDatastreamDissemination(pid, 
-//                        dsID, null);
-//                ds = mts.getStream();
-//            } catch (AxisFault e) {
-//                throw new GenericSearchException(e.getClass().getName()+": "+e.toString());
-//            } catch (RemoteException e) {
-//                throw new GenericSearchException(e.getClass().getName()+": "+e.toString());
-//            }
-        	//MIH: REST
+            InputStream inStr = null;
+            ByteArrayOutputStream out = null;
             try {
             	com.yourmediashelf.fedora.client.FedoraClient restClient = 
             		getRestFedoraClient(
@@ -648,31 +500,43 @@ public class GenericOperationsImpl implements Operations {
                 		fedoraSoap, 
                 		fedoraUser,
                 		fedoraPass );
-            	dsID = dsID.replaceAll("\\/","\\|");
-            	response = getDatastreamDissemination(pid, URLEncoder.encode(dsID, de.escidoc.sb.common.Constants.XML_CHARACTER_ENCODING)).execute(restClient);
+            	FedoraResponse response = getDatastreamDissemination(pid, dsID).execute(restClient);
+                inStr = response.getEntityInputStream();
+                out = new ByteArrayOutputStream();
+                if (inStr != null) {
+                    byte[] bytes = new byte[0xFFFF];
+                    int i = -1;
+                    while ((i = inStr.read(bytes)) > -1) {
+                        out.write(bytes, 0, i);
+                    }
+                    out.flush();
+                    ds = out.toByteArray();
+                }
                 mimetype = response.getMimeType();
 
             } catch (Exception e) {
     			if (Boolean.parseBoolean(Config.getCurrentConfig()
     					.getIgnoreTextExtractionErrors())) {
-    				logger.warn("couldnt get fulltext: " + e.toString());
-    				Stream stream = new Stream();
-    				try {
-        				stream.write("textfromfilenotextractable".getBytes(
-        						de.escidoc.sb.common.Constants.XML_CHARACTER_ENCODING));
-        				stream.lock();
-    				}
-    				catch (Exception ex) {
-    					logger.error("couldnt write error-stream " + ex.toString());
-    				}
-    				return stream;
+    				logger.warn(e);
+    				return new StringBuffer("textfromfilenotextractable textfrompdffilenotextractable");
     			} else {
                     throw new GenericSearchException(e.getClass().getName()+": "+e.toString());
     			}
+            } finally {
+                if (inStr != null) {
+                    try {
+                        inStr.close();
+                    } catch (IOException e) {}
+                }
+                if (out != null) {
+                    try {
+                        out.close();
+                    } catch (IOException e) {}
+                }
             }
         }
-        if (response != null && response.getEntityInputStream() != null) {
-            dsBuffer = (TransformerToText.getText(response.getEntityInputStream(), mimetype));
+        if (ds != null) {
+            dsBuffer = (new TransformerToText().getText(ds, mimetype));
         }
         if (logger.isDebugEnabled())
             logger.debug("getFirstDatastreamText" +
@@ -683,7 +547,7 @@ public class GenericOperationsImpl implements Operations {
         return dsBuffer;
     }
     
-    public Stream getDisseminationText(
+    public StringBuffer getDisseminationText(
             String pid,
             String repositoryName,
             String bDefPid, 
@@ -691,13 +555,7 @@ public class GenericOperationsImpl implements Operations {
             String parameters, 
             String asOfDateTime)
     throws GenericSearchException {
-//    	return getDisseminationText(pid, repositoryName, bDefPid, methodName, parameters, asOfDateTime,
-//                		config.getFedoraSoap(repositoryName), 
-//                		config.getFedoraUser(repositoryName), 
-//                		config.getFedoraPass(repositoryName), 
-//                		config.getTrustStorePath(repositoryName), 
-//                		config.getTrustStorePass(repositoryName) );
-    	//MIH: REST
+
     	return getDisseminationText(pid, repositoryName, bDefPid, methodName, parameters, asOfDateTime,
         		config.getFedoraRest(repositoryName), 
         		config.getFedoraUser(repositoryName), 
@@ -706,7 +564,7 @@ public class GenericOperationsImpl implements Operations {
         		config.getTrustStorePass(repositoryName) );
     }
     
-    public Stream getDisseminationText(
+    public StringBuffer getDisseminationText(
             String pid,
             String repositoryName,
             String bDefPid, 
@@ -738,42 +596,12 @@ public class GenericOperationsImpl implements Operations {
         if (logger.isDebugEnabled())
             logger.debug("getDisseminationText" +
                     " #parameters="+params.length);
-        Stream dsBuffer = new Stream();
+        StringBuffer dsBuffer = new StringBuffer();
         String mimetype = "";
-    	FedoraResponse response = null;
+        ds = null;
         if (pid != null) {
-//            try {
-//                FedoraAPIA apia = getAPIA(
-//                		repositoryName, 
-//                		fedoraSoap, 
-//                		fedoraUser,
-//                		fedoraPass,
-//                		trustStorePath,
-//                		trustStorePass );
-//                MIMETypedStream mts = apia.getDissemination(pid, bDefPid, 
-//                        methodName, params, asOfDateTime);
-//                if (mts==null) {
-//                    throw new GenericSearchException("getDissemination returned null");
-//                }
-//                ds = mts.getStream();
-//                mimetype = mts.getMIMEType();
-//                if (logger.isDebugEnabled())
-//                    logger.debug("getDisseminationText" +
-//                            " mimetype="+mimetype);
-//            } catch (GenericSearchException e) {
-//                if (e.toString().indexOf("DisseminatorNotFoundException")>-1)
-//                    return new StringBuffer();
-//                else
-//                    throw new GenericSearchException(e.toString());
-//            } catch (AxisFault e) {
-//                if (e.getFaultString().indexOf("DisseminatorNotFoundException")>-1)
-//                    return new StringBuffer();
-//                else
-//                    throw new GenericSearchException(e.getFaultString()+": "+e.toString());
-//            } catch (RemoteException e) {
-//                throw new GenericSearchException(e.getClass().getName()+": "+e.toString());
-//            }
-        	//MIH: REST
+            InputStream inStr = null;
+            ByteArrayOutputStream out = null;
             try {
             	com.yourmediashelf.fedora.client.FedoraClient restClient = 
             		getRestFedoraClient(
@@ -787,7 +615,18 @@ public class GenericOperationsImpl implements Operations {
             	    getDissemination.methodParam(
             	        property.getName(), property.getValue());
             	}
-            	response = getDissemination.execute(restClient);
+            	FedoraResponse response = getDissemination.execute(restClient);
+                inStr = response.getEntityInputStream();
+                out = new ByteArrayOutputStream();
+                if (inStr != null) {
+                    byte[] bytes = new byte[0xFFFF];
+                    int i = -1;
+                    while ((i = inStr.read(bytes)) > -1) {
+                        out.write(bytes, 0, i);
+                    }
+                    out.flush();
+                    ds = out.toByteArray();
+                }
                 mimetype = response.getMimeType();
               if (logger.isDebugEnabled())
               logger.debug("getDisseminationText" +
@@ -796,24 +635,26 @@ public class GenericOperationsImpl implements Operations {
             } catch (Exception e) {
     			if (Boolean.parseBoolean(Config.getCurrentConfig()
     					.getIgnoreTextExtractionErrors())) {
-    				logger.warn("couldnt get fulltext: " + e.toString());
-    				Stream stream = new Stream();
-    				try {
-        				stream.write("textfromfilenotextractable".getBytes(
-        						de.escidoc.sb.common.Constants.XML_CHARACTER_ENCODING));
-        				stream.lock();
-    				}
-    				catch (Exception ex) {
-    					logger.error("couldnt write error-stream " + ex.toString());
-    				}
-    				return stream;
+    				logger.warn(e);
+    				return new StringBuffer("textfromfilenotextractable textfrompdffilenotextractable");
     			} else {
                     throw new GenericSearchException(e.getClass().getName()+": "+e.toString());
     			}
+            } finally {
+                if (inStr != null) {
+                    try {
+                        inStr.close();
+                    } catch (IOException e) {}
+                }
+                if (out != null) {
+                    try {
+                        out.close();
+                    } catch (IOException e) {}
+                }
             }
         }
-        if (response != null && response.getEntityInputStream() != null) {
-            dsBuffer = (TransformerToText.getText(response.getEntityInputStream(), mimetype));
+        if (ds != null) {
+            dsBuffer = (new TransformerToText().getText(ds, mimetype));
         }
         if (logger.isDebugEnabled())
             logger.debug("getDisseminationText" +
@@ -835,11 +676,12 @@ public class GenericOperationsImpl implements Operations {
             if (resolvedXsltName.startsWith("http")) {
                 return URLDecoder.decode(resolvedXsltName, "UTF-8");
             } else {
-                return "/index/" + indexName + "/" + resolvedXsltName;
+                return config.getConfigName() + "/index/" + indexName + "/" + resolvedXsltName;
             }
         } catch (Exception e) {
             throw new GenericSearchException(e.toString());
         }
     }
     
+
 }

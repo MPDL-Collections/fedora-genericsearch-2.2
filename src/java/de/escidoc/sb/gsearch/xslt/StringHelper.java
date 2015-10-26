@@ -29,12 +29,17 @@
 
 package de.escidoc.sb.gsearch.xslt;
 
+import java.io.IOException;
+import java.io.StringReader;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 import org.apache.axis.utils.StringUtils;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+import org.apache.log4j.Logger;
+import org.apache.lucene.analysis.ASCIIFoldingFilter;
+import org.apache.lucene.analysis.KeywordAnalyzer;
+import org.apache.lucene.analysis.TokenStream;
+import org.apache.lucene.analysis.tokenattributes.CharTermAttribute;
 import org.w3c.dom.NodeList;
 
 /**
@@ -50,24 +55,18 @@ import org.w3c.dom.NodeList;
  */
 public class StringHelper {
 
-    private static Logger log;
-
-  //äöü
-    private static Pattern pattern = Pattern.compile(
-            "([\u00e4\u00f6\u00fc])");
-    private static Matcher matcher = pattern.matcher("");
-
     private static final Pattern PATTERN_ID_WITHOUT_VERSION =
         Pattern.compile("([a-zA-Z0-9]+:[a-zA-Z0-9]+):[0-9]+");
 
     private static final Matcher MATCHER_ID_WITHOUT_VERSION =
         PATTERN_ID_WITHOUT_VERSION.matcher("");
 
+	private static KeywordAnalyzer analyzer = new KeywordAnalyzer();
+
     static {
-        log =
-            LoggerFactory
-                .getLogger(
-                de.escidoc.sb.gsearch.xslt.StringHelper.class);
+        Logger
+		    .getLogger(
+		    de.escidoc.sb.gsearch.xslt.StringHelper.class);
     }
 
   /**
@@ -79,6 +78,7 @@ public class StringHelper {
      *            character
      * @return String substring of term after last occurence of term1.
      */
+    
     public static String getSubstringAfterLast(
         final String term, final String term1) {
         if (StringUtils.isEmpty(term) || StringUtils.isEmpty(term1) 
@@ -97,7 +97,7 @@ public class StringHelper {
      *            character
      * @return String substring of term after last occurence of term1.
      */
-    public static String getSubstringAfterLast(
+    public static String getSubstringAfterLastForNode(
         final NodeList nodeList, final String term1) {
     	String term = "";
     	if (nodeList != null && nodeList.getLength() == 1) {
@@ -111,7 +111,7 @@ public class StringHelper {
     }
 
     /**
-     * converts string to lower case, replaces all ä,ö,ü with ae, oe, ue
+     * converts to lower case and ascii if possible, otherwise leave at it is.
      * 
      * @param input
      *            input
@@ -121,13 +121,21 @@ public class StringHelper {
         if (input == null) {
             return null;
         }
-        String output = input.toLowerCase();
-        matcher.reset(output);
-        output = matcher.replaceAll("$1e");
-        output = output.replaceAll("\u00e4", "a");
-        output = output.replaceAll("\u00f6", "o");
-        output = output.replaceAll("\u00fc", "u");
-        return output;
+        String normalizedString = "";
+        
+        TokenStream tokenStream = analyzer.tokenStream("", new StringReader(input));       
+        tokenStream = new ASCIIFoldingFilter(tokenStream);
+
+        CharTermAttribute charTermAttribute = tokenStream.addAttribute(CharTermAttribute.class);        
+        try {
+			while (tokenStream.incrementToken()) {
+			    normalizedString = charTermAttribute.toString();
+			}
+		} catch (IOException e) {
+			e.printStackTrace();
+		}
+      
+        return normalizedString.toLowerCase();
     }
 
     /**

@@ -8,19 +8,20 @@
 package dk.defxws.fedoragsearch.server;
 
 import java.io.BufferedReader;
+import java.io.ByteArrayInputStream;
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.InputStreamReader;
+import java.io.UnsupportedEncodingException;
 
-import javax.xml.stream.XMLEventReader;
-import javax.xml.stream.XMLInputFactory;
-import javax.xml.stream.XMLStreamException;
-import javax.xml.stream.events.XMLEvent;
+import javax.xml.transform.TransformerConfigurationException;
 import javax.xml.transform.stream.StreamSource;
 
+import org.apache.commons.io.FileUtils;
+import org.apache.log4j.Logger;
 import org.apache.lucene.demo.html.HTMLParser;
 import org.apache.pdfbox.cos.COSDocument;
 import org.apache.pdfbox.encryption.DocumentEncryption;
@@ -29,22 +30,9 @@ import org.apache.pdfbox.exceptions.InvalidPasswordException;
 import org.apache.pdfbox.pdfparser.PDFParser;
 import org.apache.pdfbox.pdmodel.PDDocument;
 import org.apache.pdfbox.util.PDFTextStripper;
-import org.apache.poi.hslf.extractor.PowerPointExtractor;
-import org.apache.poi.hssf.extractor.ExcelExtractor;
-import org.apache.poi.hssf.usermodel.HSSFWorkbook;
 import org.apache.poi.hwpf.extractor.WordExtractor;
-import org.apache.poi.openxml4j.opc.OPCPackage;
-import org.apache.poi.poifs.filesystem.POIFSFileSystem;
-import org.apache.poi.xslf.extractor.XSLFPowerPointExtractor;
-import org.apache.poi.xssf.extractor.XSSFExcelExtractor;
-import org.apache.poi.xwpf.extractor.XWPFWordExtractor;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
-import de.escidoc.sb.common.Constants;
 import dk.defxws.fedoragsearch.server.errors.GenericSearchException;
-import dk.defxws.fedoragsearch.server.utils.IOUtils;
-import dk.defxws.fedoragsearch.server.utils.Stream;
 
 /**
  * performs transformations from formatted documents to text
@@ -52,53 +40,25 @@ import dk.defxws.fedoragsearch.server.utils.Stream;
  * @author  gsp@dtv.dk
  * @version 
  */
-public final class TransformerToText {
+public class TransformerToText {
     
     private static final Logger logger =
-        LoggerFactory.getLogger(TransformerToText.class);
+        Logger.getLogger(TransformerToText.class);
     
     public static final String[] handledMimeTypes = { "text/plain", "text/xml",
         "text/html", "application/xml", "application/pdf",
-        "application/msword", "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-        "application/vnd.ms-powerpoint", "application/vnd.openxmlformats-officedocument.presentationml.presentation",
-        "application/vnd.ms-excel", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"};
+        "application/msword" };
     
-    private static final String genericTextExtractionErrorString = " textnotextractable";
-    
-    private static final String textTextExtractionErrorString = 
-    	"textfromtextfilenotextractable" + genericTextExtractionErrorString;
-    
-    private static final String xmlTextExtractionErrorString = 
-    	"textfromxmlfilenotextractable" + genericTextExtractionErrorString;
-    
-    private static final String htmlTextExtractionErrorString = 
-    	"textfromhtmlfilenotextractable" + genericTextExtractionErrorString;
-    
-    private static final String pdfTextExtractionErrorString = 
-    	"textfrompdffilenotextractable" + genericTextExtractionErrorString;
-    
-    private static final String docTextExtractionErrorString = 
-    	"textfromdocfilenotextractable" + genericTextExtractionErrorString;
-    
-    private static final String docxTextExtractionErrorString = 
-    	"textfromdocxfilenotextractable" + genericTextExtractionErrorString;
-    
-    private static final String pptTextExtractionErrorString = 
-    	"textfrompptfilenotextractable" + genericTextExtractionErrorString;
-    
-    private static final String pptxTextExtractionErrorString = 
-    	"textfrompptxfilenotextractable" + genericTextExtractionErrorString;
-    
-    private static final String xlsTextExtractionErrorString = 
-    	"textfromxlsfilenotextractable" + genericTextExtractionErrorString;
-    
-    private static final String xlsxTextExtractionErrorString = 
-    	"textfromxlsxfilenotextractable" + genericTextExtractionErrorString;
-    
-    private TransformerToText() {
+    public TransformerToText() {
     }
-
-    public static Stream getText(InputStream doc, String mimetype)
+    
+    /**
+     * 
+     * 
+     * @throws TransformerConfigurationException,
+     *             TransformerException.
+     */
+    public StringBuffer getText(byte[] doc, String mimetype)
             throws GenericSearchException {
         try {
             if (mimetype.equals("text/plain")) {
@@ -111,299 +71,131 @@ public final class TransformerToText {
             } else if (mimetype.equals("application/pdf")) {
                 return getTextFromPDF(doc);
             } else if (mimetype.equals("application/ps")) {
-                return new Stream(); 
+                return new StringBuffer();
             } else if (mimetype.equals("application/msword")) {
                 return getTextFromDOC(doc);
-            } else if (mimetype.equals("application/vnd.openxmlformats-officedocument.wordprocessingml.document")) {
-                return getTextFromDOCX(doc);
-            } else if (mimetype.equals("application/vnd.ms-powerpoint")) {
-                return getTextFromPPT(doc);
-            } else if (mimetype.equals("application/vnd.openxmlformats-officedocument.presentationml.presentation")) {
-                return getTextFromPPTX(doc);
-            } else if (mimetype.equals("application/vnd.ms-excel")) {
-                return getTextFromXLS(doc);
-            } else if (mimetype.equals("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")) {
-                return getTextFromXLSX(doc);
             } else
-                return new Stream();
-        } catch (Exception e) {
+                return new StringBuffer();
+        } catch (Throwable e) {
             if (Boolean.parseBoolean(
                 Config.getCurrentConfig().getIgnoreTextExtractionErrors())) {
-                logger.warn("", e);
-                return createErrorStream("textfromfilenotextractable");
+                logger.warn(e);
+                return new StringBuffer("textfromfilenotextractable");
             } else {
                 throw new GenericSearchException(e.toString());
             }
         }
     }
 
-    private static Stream getTextFromText(InputStream input)
+    /**
+     * 
+     *
+     * @throws GenericSearchException.
+     */
+    private StringBuffer getTextFromText(byte[] doc) 
     throws GenericSearchException {
-    	long time = System.currentTimeMillis();
-        boolean errorFlag = Boolean.parseBoolean(
-                Config.getCurrentConfig().getIgnoreTextExtractionErrors());
-        Stream docText = new Stream();
+        StringBuffer docText = new StringBuffer();
+        InputStreamReader isr = null;
         try {
-            IOUtils.copy(input, docText);
-            docText.lock();
-        } catch(IOException e) {
-            if (errorFlag) {
-            	logger.warn("", e);
-                return createErrorStream(textTextExtractionErrorString);
-            } else {
-                throw new GenericSearchException(e.toString());
-            }
+            isr = new InputStreamReader(new ByteArrayInputStream(doc), "UTF-8");
+        } catch (UnsupportedEncodingException e) {
+            throw new GenericSearchException("encoding exception", e);
         }
-        if (logger.isDebugEnabled()) {
-        	logger.debug("extracting text from text needed " + (System.currentTimeMillis() - time));
+        try {
+            int c = isr.read();
+            while (c>-1) {
+                docText.append((char)c);
+                c=isr.read();
+            }
+        } catch (IOException e) {
+            throw new GenericSearchException(e.toString());
         }
         return docText;
     }
 
-
-	private static Stream getTextFromXML(InputStream doc)
-			throws GenericSearchException {
-		long time = System.currentTimeMillis();
-		boolean errorFlag = Boolean.parseBoolean(Config.getCurrentConfig()
-				.getIgnoreTextExtractionErrors());
-		InputStreamReader isr = null;
-		Stream docText = new Stream();
-
-		try {
-			isr = new InputStreamReader(doc, Constants.XML_CHARACTER_ENCODING);
-			XMLInputFactory factory = XMLInputFactory.newInstance();
-			XMLEventReader reader = factory
-					.createXMLEventReader(new StreamSource(isr));
-			while (reader.hasNext()) {
-				XMLEvent event = reader.nextEvent();
-				if (event.getEventType() == XMLEvent.CHARACTERS) {
-					docText.write(event.asCharacters().getData()
-							.getBytes(Constants.XML_CHARACTER_ENCODING));
-				}
-			}
-		} catch (Exception e) {
-			if (errorFlag) {
-				logger.warn("", e);
-				return createErrorStream(xmlTextExtractionErrorString);
-			} else {
-				throw new GenericSearchException(e.toString());
-			}
-		} finally {
-			try {
-				isr.close();
-			} catch (IOException e) {
-				logger.warn("", e);
-			}
-		}
-		if (logger.isDebugEnabled()) {
-			logger.debug("extracting text from xml needed "
-					+ (System.currentTimeMillis() - time));
-		}
-		return docText;
-	}
-
-    private static Stream getTextFromHTML(InputStream doc)
+/**
+ * 
+ *
+ * @throws GenericSearchException.
+ */
+private StringBuffer getTextFromXML(byte[] doc) 
+throws GenericSearchException {
+    InputStreamReader isr = null;
+    try {
+        isr = new InputStreamReader(new ByteArrayInputStream(doc), "UTF-8");
+    } catch (UnsupportedEncodingException e) {
+        throw new GenericSearchException("encoding exception", e);
+    }
+    StringBuffer docText = (new GTransformer()).transform(
+            Config.getDefaultConfigName()+ "/index/textFromXml", 
+            new StreamSource(isr));
+    docText.delete(0, docText.indexOf(">")+1);
+    return docText;
+}
+    
+    /**
+     * 
+     *
+     * @throws GenericSearchException.
+     */
+    private StringBuffer getTextFromHTML(byte[] doc) 
     throws GenericSearchException {
-    	long time = System.currentTimeMillis();
-        boolean errorFlag = Boolean.parseBoolean(
-                Config.getCurrentConfig().getIgnoreTextExtractionErrors());
-        Stream docText = new Stream();
+        StringBuffer docText = new StringBuffer();
+        HTMLParser htmlParser = new HTMLParser(new ByteArrayInputStream(doc));
         try {
-            HTMLParser htmlParser = new HTMLParser(doc);
-            IOUtils.copy(htmlParser.getReader(), docText);
-            docText.lock();
-        } catch (Exception e) {
-            if (errorFlag) {
-            	logger.warn("", e);
-                return createErrorStream(htmlTextExtractionErrorString);
-            } else {
-                throw new GenericSearchException(e.toString());
+            InputStreamReader isr = (InputStreamReader) htmlParser.getReader();
+            int c = isr.read();
+            while (c>-1) {
+                docText.append((char)c);
+                c=isr.read();
             }
-        }
-        if (logger.isDebugEnabled()) {
-        	logger.debug("extracting text from html needed " + (System.currentTimeMillis() - time));
+        } catch (IOException e) {
+            throw new GenericSearchException(e.toString());
         }
         return docText;
     }
-
-    private static Stream getTextFromDOC(InputStream doc)
+    
+    /**
+     * MIH: Added for MS-Word Support
+     * 
+     * @throws GenericSearchException.
+     */
+    private StringBuffer getTextFromDOC(byte[] doc)
             throws GenericSearchException {
-    	long time = System.currentTimeMillis();
-        boolean errorFlag = Boolean.parseBoolean(
-                Config.getCurrentConfig().getIgnoreTextExtractionErrors());
-        WordExtractor wordExtractor = null;
+        InputStream in = null;
+        WordExtractor wd = null;
         try {
-    		wordExtractor = new WordExtractor(doc);
-            StringBuffer buffer = new StringBuffer(wordExtractor.getText().trim());
-            Stream stream = new Stream();
-            stream.write(buffer.toString().getBytes(Constants.XML_CHARACTER_ENCODING));
-            stream.lock();
-            if (logger.isDebugEnabled()) {
-            	logger.debug("extracting text from doc needed " + (System.currentTimeMillis() - time));
+            in = new ByteArrayInputStream(doc);
+            wd = new WordExtractor(in);
+            StringBuffer buffer = new StringBuffer(wd.getText().trim());
+            for (int c = 0; c < buffer.length(); c++) {
+                if (buffer.charAt(c) <= '\u001F'
+                        || buffer.charAt(c) == '\u201C'
+                        || buffer.charAt(c) == '\u201D') {
+                    buffer.setCharAt(c, ' ');
+                }
             }
-            return stream;
+            return buffer;
         } catch (Exception e) {
-            if (errorFlag) {
-            	logger.warn("", e);
-                return createErrorStream(docTextExtractionErrorString);
-            } else {
-                throw new GenericSearchException("cannot parse doc-file",
-                        e);
-            }
+            throw new GenericSearchException("Cannot parse Word document", e);
         } finally {
-        	wordExtractor = null;
+            if (in != null) {
+                try {
+                    in.close();
+                } catch (IOException e) {
+                }
+                in = null;
+            }
+            wd = null;
         }
     }
 
-	private static Stream getTextFromDOCX(InputStream doc)
-			throws GenericSearchException {
-    	long time = System.currentTimeMillis();
-		boolean errorFlag = Boolean.parseBoolean(Config.getCurrentConfig()
-				.getIgnoreTextExtractionErrors());
-		XWPFWordExtractor wordExtractor = null;
-		try {
-			wordExtractor = new XWPFWordExtractor(OPCPackage.open(doc));
-	        StringBuffer buffer = new StringBuffer(wordExtractor.getText().trim());
-			Stream stream = new Stream();
-			stream.write(buffer.toString().getBytes(
-					Constants.XML_CHARACTER_ENCODING));
-			stream.lock();
-	        if (logger.isDebugEnabled()) {
-	        	logger.debug("extracting text from docx needed " + (System.currentTimeMillis() - time));
-	        }
-			return stream;
-		} catch (Exception e) {
-			if (errorFlag) {
-				logger.warn("", e);
-				return createErrorStream(docxTextExtractionErrorString);
-			} else {
-				throw new GenericSearchException("cannot parse docx-file", e);
-			}
-		} finally {
-			wordExtractor = null;
-		}
-	}
-
-	private static Stream getTextFromPPT(InputStream doc)
-			throws GenericSearchException {
-    	long time = System.currentTimeMillis();
-		boolean errorFlag = Boolean.parseBoolean(Config.getCurrentConfig()
-				.getIgnoreTextExtractionErrors());
-		PowerPointExtractor powerPointExtractor = null;
-		try {
-			powerPointExtractor = new PowerPointExtractor(doc);
-	        StringBuffer buffer = new StringBuffer(powerPointExtractor.getText(true, true).trim());
-			Stream stream = new Stream();
-			stream.write(buffer.toString().getBytes(
-					Constants.XML_CHARACTER_ENCODING));
-			stream.lock();
-	        if (logger.isDebugEnabled()) {
-	        	logger.debug("extracting text from ppt needed " + (System.currentTimeMillis() - time));
-	        }
-			return stream;
-		} catch (Exception e) {
-			if (errorFlag) {
-				logger.warn("", e);
-				return createErrorStream(pptTextExtractionErrorString);
-			} else {
-				throw new GenericSearchException("cannot parse ppt-file", e);
-			}
-		} finally {
-			powerPointExtractor = null;
-		}
-	}
-
-	private static Stream getTextFromPPTX(InputStream doc)
-			throws GenericSearchException {
-    	long time = System.currentTimeMillis();
-		boolean errorFlag = Boolean.parseBoolean(Config.getCurrentConfig()
-				.getIgnoreTextExtractionErrors());
-		XSLFPowerPointExtractor powerPointExtractor = null;
-		try {
-			powerPointExtractor = new XSLFPowerPointExtractor(OPCPackage.open(doc));
-	        StringBuffer buffer = new StringBuffer(powerPointExtractor.getText(true, true).trim());
-			Stream stream = new Stream();
-			stream.write(buffer.toString().getBytes(
-					Constants.XML_CHARACTER_ENCODING));
-			stream.lock();
-	        if (logger.isDebugEnabled()) {
-	        	logger.debug("extracting text from pptx needed " + (System.currentTimeMillis() - time));
-	        }
-			return stream;
-		} catch (Exception e) {
-			if (errorFlag) {
-				logger.warn("", e);
-				return createErrorStream(pptxTextExtractionErrorString);
-			} else {
-				throw new GenericSearchException("cannot parse pptx-file", e);
-			}
-		} finally {
-			powerPointExtractor = null;
-		}
-	}
-
-	private static Stream getTextFromXLS(InputStream doc)
-			throws GenericSearchException {
-    	long time = System.currentTimeMillis();
-		boolean errorFlag = Boolean.parseBoolean(Config.getCurrentConfig()
-				.getIgnoreTextExtractionErrors());
-		HSSFWorkbook wb = null;
-		ExcelExtractor excelExtractor = null;
-		try {
-			wb = new HSSFWorkbook(new POIFSFileSystem(doc));
-			excelExtractor = new ExcelExtractor(wb);
-	        StringBuffer buffer = new StringBuffer(excelExtractor.getText().trim());
-			Stream stream = new Stream();
-			stream.write(buffer.toString().getBytes(
-					Constants.XML_CHARACTER_ENCODING));
-			stream.lock();
-	        if (logger.isDebugEnabled()) {
-	        	logger.debug("extracting text from xls needed " + (System.currentTimeMillis() - time));
-	        }
-			return stream;
-		} catch (Exception e) {
-			if (errorFlag) {
-				logger.warn("", e);
-				return createErrorStream(xlsTextExtractionErrorString);
-			} else {
-				throw new GenericSearchException("cannot parse xls-file", e);
-			}
-		} finally {
-			excelExtractor = null;
-			wb = null;
-		}
-	}
-
-	private static Stream getTextFromXLSX(InputStream doc)
-			throws GenericSearchException {
-    	long time = System.currentTimeMillis();
-		boolean errorFlag = Boolean.parseBoolean(Config.getCurrentConfig()
-				.getIgnoreTextExtractionErrors());
-		XSSFExcelExtractor excelExtractor = null;
-		try {
-			excelExtractor = new XSSFExcelExtractor(OPCPackage.open(doc));
-	        StringBuffer buffer = new StringBuffer(excelExtractor.getText().trim());
-			Stream stream = new Stream();
-			stream.write(buffer.toString().getBytes(
-					Constants.XML_CHARACTER_ENCODING));
-			stream.lock();
-	        if (logger.isDebugEnabled()) {
-	        	logger.debug("extracting text from xlsx needed " + (System.currentTimeMillis() - time));
-	        }
-			return stream;
-		} catch (Exception e) {
-			if (errorFlag) {
-				logger.warn("", e);
-				return createErrorStream(xlsxTextExtractionErrorString);
-			} else {
-				throw new GenericSearchException("cannot parse xlsx-file", e);
-			}
-		} finally {
-			excelExtractor = null;
-		}
-	}
-
-    private static Stream getTextFromPDF(InputStream doc)
+    /**
+     * 
+     * 
+     * @throws GenericSearchException.
+     */
+    private StringBuffer getTextFromPDF(byte[] doc)
             throws GenericSearchException {
         String textExtractorCommand = Config.getCurrentConfig().getPdfTextExtractorCommand();
         if (textExtractorCommand == null || textExtractorCommand.equals("")) {
@@ -424,7 +216,7 @@ public final class TransformerToText {
         return parser.getDocument();
     }
     
-    private static void closeCOSDocument(COSDocument cosDoc) {
+    private void closeCOSDocument(COSDocument cosDoc) {
         if (cosDoc != null) {
             try {
                 cosDoc.close();
@@ -434,20 +226,20 @@ public final class TransformerToText {
         }
     }
     
-    private static Stream getTextFromPDFWithPdfBox(InputStream doc)
+    private StringBuffer getTextFromPDFWithPdfBox(byte[] doc)
     throws GenericSearchException  {
-    	long time = System.currentTimeMillis();
+        StringBuffer docText = new StringBuffer();
         COSDocument cosDoc = null;
         String password = "";
         boolean errorFlag = Boolean.parseBoolean(
                 Config.getCurrentConfig().getIgnoreTextExtractionErrors());
         try {
-            cosDoc = parseDocument(doc);
+            cosDoc = parseDocument(new ByteArrayInputStream(doc));
         } catch (IOException e) {
             closeCOSDocument(cosDoc);
             if (errorFlag) {
-            	logger.warn("", e);
-                return createErrorStream(pdfTextExtractionErrorString);
+            	logger.warn(e);
+                return new StringBuffer("textfrompdffilenotextractable");
             } else {
                 throw new GenericSearchException("Cannot parse PDF document", e);
             }
@@ -462,8 +254,8 @@ public final class TransformerToText {
         } catch (CryptographyException e) {
             closeCOSDocument(cosDoc);
             if (errorFlag) {
-            	logger.warn("", e);
-                return createErrorStream(pdfTextExtractionErrorString);
+            	logger.warn(e);
+                return new StringBuffer("textfrompdffilenotextractable");
             } else {
                 throw new GenericSearchException("Cannot decrypt PDF document",
                         e);
@@ -471,8 +263,8 @@ public final class TransformerToText {
         } catch (InvalidPasswordException e) {
             closeCOSDocument(cosDoc);
             if (errorFlag) {
-            	logger.warn("", e);
-                return createErrorStream(pdfTextExtractionErrorString);
+            	logger.warn(e);
+                return new StringBuffer("textfrompdffilenotextractable");
             } else {
                 throw new GenericSearchException("Cannot decrypt PDF document",
                         e);
@@ -480,40 +272,34 @@ public final class TransformerToText {
         } catch (IOException e) {
             closeCOSDocument(cosDoc);
             if (errorFlag) {
-            	logger.warn("", e);
-                return createErrorStream(pdfTextExtractionErrorString);
+            	logger.warn(e);
+                return new StringBuffer("textfrompdffilenotextractable");
             } else {
                 throw new GenericSearchException("Cannot decrypt PDF document",
                         e);
             }
         }
-        Stream docText = new Stream();
+
         // extract PDF document's textual content
         try {
             PDFTextStripper stripper = new PDFTextStripper();
-            // TODO: Unterstützt PDFTextStripper keine Streams?
-            docText.write(stripper.getText(new PDDocument(cosDoc)).getBytes(Constants.XML_CHARACTER_ENCODING));
-            docText.lock();
-        } catch (Exception e) {
+            docText = new StringBuffer(stripper.getText(new PDDocument(cosDoc)));
+        } catch (Throwable e) {
             closeCOSDocument(cosDoc);
             if (errorFlag) {
-            	logger.warn("", e);
-                return createErrorStream(pdfTextExtractionErrorString);
+            	logger.warn(e);
+                return new StringBuffer("textfrompdffilenotextractable");
             } else {
                 throw new GenericSearchException(
                         "Cannot parse PDF document", e);
             }
         }
         closeCOSDocument(cosDoc);
-        if (logger.isDebugEnabled()) {
-        	logger.debug("extracting text from pdf needed " + (System.currentTimeMillis() - time));
-        }
         return docText;
     }
 
-    private static Stream getTextFromPDFWithItext(InputStream doc) throws GenericSearchException {
-    	long time = System.currentTimeMillis();
-        Stream docText = new Stream();
+    private StringBuffer getTextFromPDFWithItext(byte[] doc) throws GenericSearchException {
+        StringBuffer docText = new StringBuffer();
         boolean errorFlag = Boolean.parseBoolean(
             Config.getCurrentConfig().getIgnoreTextExtractionErrors());
         try {
@@ -522,28 +308,24 @@ public final class TransformerToText {
 //            for (int i = 1; i <= reader.getNumberOfPages(); i++) {
 //                docText.append(PdfTextExtractor.getTextFromPage(reader, i)).append(" ");
 //            }
-        	docText.write(" ".getBytes(Constants.XML_CHARACTER_ENCODING)); // TODO: Warum ist der obere Code auskommentiert?
-            docText.lock();
-        } catch (Exception e) {
+        	docText.append(" ");
+        } catch (Throwable e) {
             if (errorFlag) {
-            	logger.warn("", e);
-                return createErrorStream(pdfTextExtractionErrorString);
+            	logger.warn(e);
+                return new StringBuffer("textfrompdffilenotextractable");
             } else {
                 throw new GenericSearchException(
                         "Cannot parse PDF document", e);
             }
         }
-        if (logger.isDebugEnabled()) {
-        	logger.debug("extracting text from pdf needed " + (System.currentTimeMillis() - time));
-        }
         return docText;
     }
 
-    private static Stream getTextFromPDFWithExternalTool(InputStream doc) throws GenericSearchException {
-    	long time = System.currentTimeMillis();
+    private StringBuffer getTextFromPDFWithExternalTool(byte[] doc) throws GenericSearchException {
         boolean errorFlag = Boolean.parseBoolean(
             Config.getCurrentConfig().getIgnoreTextExtractionErrors());
-        Stream textBuffer = new Stream();
+        StringBuffer textBuffer = new StringBuffer("");
+        
         String inputFileName = null;
         String outputFileName = null;
         FileOutputStream fop = null;
@@ -554,27 +336,21 @@ public final class TransformerToText {
         Process p = null;
         try {
             long currMillies = System.currentTimeMillis();
-            String escidocHome = System.getProperty("ESCIDOC_HOME");
-            if (escidocHome != null) {
-                escidocHome += "/";
+            String catalinaHome = System.getProperty("catalina.home");
+            if (catalinaHome != null) {
+                catalinaHome += "/";
             } else {
-                escidocHome = "";
+                catalinaHome = "";
             }
-            inputFileName = escidocHome + currMillies + ".pdf";
-            outputFileName = escidocHome + currMillies + ".txt";
+            inputFileName = catalinaHome + currMillies + ".pdf";
+            outputFileName = catalinaHome + currMillies + ".txt";
 
             //write pdf-bytes to file
             File f = new File(inputFileName);
             fop = new FileOutputStream(f);
-            if (doc != null) {
-                byte[] bytes = new byte[0xFFFF];
-                int i = -1;
-                while ((i = doc.read(bytes)) > -1) {
-                    fop.write(bytes, 0, i);
-                }
-                fop.flush();
-                fop.close();
-            }
+            fop.write(doc);
+            fop.flush();
+            fop.close();
             
             //convert pdf-file to text-file
             String command = Config.getCurrentConfig().getPdfTextExtractorCommand();
@@ -591,11 +367,11 @@ public final class TransformerToText {
 
             //wait until process is finished
             stdIn = new BufferedReader(
-                    new InputStreamReader(p.getInputStream(), Constants.XML_CHARACTER_ENCODING));
+                    new InputStreamReader(p.getInputStream(), "UTF-8"));
             errIn = new BufferedReader(
-                    new InputStreamReader(p.getErrorStream(), Constants.XML_CHARACTER_ENCODING));
-            StringBuffer errBuf = new StringBuffer("");
-            long time1 = System.currentTimeMillis();
+                    new InputStreamReader(p.getErrorStream(), "UTF-8"));
+            StringBuffer outBuf = new StringBuffer("");
+            long time = System.currentTimeMillis();
             while (true) {
                 try {
                     p.exitValue();
@@ -609,35 +385,26 @@ public final class TransformerToText {
                     }
                     if (errIn.ready()) {
                        while ((c = errIn.read()) > -1) {
-                           errBuf.append((char)c);
+                           outBuf.append((char)c);
                        }
                     }
-                    if (System.currentTimeMillis() - time1 > 60000) {
+                    if (System.currentTimeMillis() - time > 60000) {
                         throw new IOException(
                                 "couldnt extract text from pdf, timeout reached");
                     }
                 }
             }
-            if (errBuf.length() > 0) {
-                logger.warn("error while transforming pdf "
-                        + "to text with external tool:\n" + errBuf);
+            if (outBuf.length() > 0) {
+                logger.info("transforming pdf to text with external tool:\n" + outBuf);
             }
             
-            //read textfile
-            fileIn = new FileInputStream(outputFileName);            
-            in = new BufferedReader(
-                    new InputStreamReader(fileIn, Constants.XML_CHARACTER_ENCODING));
-            String str = new String("");
-            while ((str = in.readLine()) != null) {
-                textBuffer.write(str.getBytes(Constants.XML_CHARACTER_ENCODING));
-                textBuffer.write(" ".getBytes(Constants.XML_CHARACTER_ENCODING)); // TODO: Wofür sind Spaces nötig?
-            }
-            textBuffer.lock();
-            fileIn.close();
-        } catch (Exception e) {
+            String out = FileUtils.readFileToString(new File(outputFileName), "UTF-8");
+            logger.debug("string from file <" + out + ">");
+            textBuffer = new StringBuffer(out);         
+        } catch (Throwable e) {
             if (errorFlag) {
-            	logger.warn("", e);
-                return createErrorStream(pdfTextExtractionErrorString);
+            	logger.warn(e);
+                return new StringBuffer("textfrompdffilenotextractable");
             } else {
                 throw new GenericSearchException(
                         "Cannot parse PDF document", e);
@@ -693,13 +460,35 @@ public final class TransformerToText {
                 outputFile.delete();
             } catch (Exception e) {}
         }
-        
         if (logger.isDebugEnabled()) {
-        	logger.debug("extracting text from pdf needed " + (System.currentTimeMillis() - time));
+        	logger.debug("getTextFromPDFWithExternalTool returning textBuffer <" + textBuffer.toString() + ">");
         }
         return textBuffer;
     }
     
+    private void closePDDocument(PDDocument pdDoc) {
+        if (pdDoc != null) {
+            try {
+            	pdDoc.close();
+            }
+            catch (IOException e) {
+            }
+        }
+    }
+    private void checkGibberish(final StringBuffer buffer) throws Exception {
+        int j = 0;
+        for (int i = 0; i < buffer.length(); i++) {
+            if (j > 100) {
+                throw new Exception("gibberish");
+            }
+            String hex = charToHex(buffer.charAt(i));
+            int intValue = Integer.parseInt(hex, 16);
+            if (intValue < 9) {
+              j++;
+            }
+        }
+    }
+
     private String byteToHex(byte b) {
         // Returns hex String representation of byte b
         char hexDigit[] = {
@@ -710,18 +499,14 @@ public final class TransformerToText {
         return new String(array);
      }
 
-     public static void main(String[] args) {
-    }
+     private String charToHex(char c) {
+        // Returns hex String representation of char c
+        byte hi = (byte) (c >>> 8);
+        byte lo = (byte) (c & 0xff);
+        return byteToHex(hi) + byteToHex(lo);
+     }
 
-    private static Stream createErrorStream(String errorMessage) throws GenericSearchException {
-        Stream errorStream = new Stream();
-        try {
-            errorStream.write(errorMessage.getBytes(Constants.XML_CHARACTER_ENCODING));
-            errorStream.lock();
-        } catch(IOException e) {
-            throw new GenericSearchException(e.toString());
-        }
-        return errorStream;
+     public static void main(String[] args) {
     }
 
 }

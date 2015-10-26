@@ -17,8 +17,7 @@ import javax.xml.transform.URIResolver;
 import javax.xml.transform.stream.StreamSource;
 
 import org.apache.commons.httpclient.UsernamePasswordCredentials;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+import org.apache.log4j.Logger;
 
 import fedora.common.http.WebClient;
 
@@ -32,7 +31,7 @@ public class URIResolverImpl implements URIResolver {
 	
 	private Config config;
     
-    private final Logger logger = LoggerFactory.getLogger(URIResolverImpl.class);
+    private final Logger logger = Logger.getLogger(URIResolverImpl.class);
     
     public void setConfig(Config config) {
 		this.config = config;
