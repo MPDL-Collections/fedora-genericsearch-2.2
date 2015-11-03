@@ -59,8 +59,10 @@ xsi:schemaLocation="http://java.sun.com/xml/ns/javaee http://java.sun.com/xml/ns
 	<welcome-file-list id="WelcomeFileList_1">
 		<welcome-file>index.html</welcome-file>
 	</welcome-file-list>
+	<!-- 
 	<login-config>
 		<auth-method>BASIC</auth-method>
 		<realm-name>Fedora Management Interface</realm-name>
 	</login-config>
+	-->
 </web-app>
