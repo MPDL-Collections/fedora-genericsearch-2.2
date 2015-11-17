@@ -2,6 +2,11 @@
 <jboss-deployment-structure xmlns="urn:jboss:deployment-structure:1.2" >
  
 	 <deployment>
+	 	 <exclusions>
+			<module name="org.apache.xalan" />
+			<module name="org.apache.xerces" />
+			<module name="org.apache.lucene" />			
+		</exclusions>
 	    <dependencies>
 	    	<module name="escidoc" export="true"/>
 	    </dependencies>
