@@ -43,11 +43,6 @@ public class RESTImpl extends HttpServlet {
     private static final String PARAM_INDEXDOCXSLT = "indexDocXslt";
     private static final String PARAM_RESULTPAGEXSLT = "resultPageXslt";
     
-    private String repositoryName;
-    private String indexName;
-    private String resultPageXslt;
-    private String restXslt;
-    
     private static final String CONTENTTYPEHTML = "Html";
     
     private static final String OP_GFINDOBJECTS = "gfindObjects";
@@ -82,25 +77,28 @@ public class RESTImpl extends HttpServlet {
     /** Process http request */
     public void doGet(HttpServletRequest request, HttpServletResponse response)
     throws ServletException, IOException { 
+        
     	Date startTime = new Date();
-        String configName = request.getParameter(PARAM_CONFIGNAME);
-        String operation = request.getParameter(PARAM_OPERATION);
+    	
+    	if (logger.isInfoEnabled())
+            logger.info("request="+request.getQueryString()+" remoteUser="+request.getRemoteUser());
+    	
+        String configName = 
+        		request.getParameter(PARAM_CONFIGNAME) != null ? request.getParameter(PARAM_CONFIGNAME) : "";
+
+        String operation = 
+        		request.getParameter(PARAM_OPERATION)  != null ? request.getParameter(PARAM_OPERATION) : "";  
+
+        String restXslt = 
+        		request.getParameter(PARAM_RESTXSLT) != null ? request.getParameter(PARAM_RESTXSLT) : "";
+        
         config = Config.getCurrentConfig();
-        if (configName!=null && !"configure".equals(operation)) {
+        if (!"configure".equals(operation)) {
         	// mainly for test purposes
         	config = Config.getConfig(configName);
         }
         StringBuffer resultXml = new StringBuffer("<resultPage/>");
-        if (logger.isInfoEnabled())
-            logger.info("request="+request.getQueryString()+" remoteUser="+request.getRemoteUser());
-        repositoryName = request.getParameter(PARAM_REPOSITORYNAME);
-        if (repositoryName==null) repositoryName="";
-        indexName = request.getParameter(PARAM_INDEXNAME);
-        if (indexName==null) indexName="";
-        resultPageXslt = request.getParameter(PARAM_RESULTPAGEXSLT);
-        if (resultPageXslt==null) resultPageXslt="";
-        restXslt = request.getParameter(PARAM_RESTXSLT);
-        if (restXslt==null) restXslt="";
+        
         String[] params = new String[8];
         params[0] = "ERRORMESSAGE";
         params[1] = "";
@@ -126,15 +124,13 @@ public class RESTImpl extends HttpServlet {
                 resultXml = new StringBuffer(getIndexConfigInfo(request, response));
             } else {
                 resultXml = new StringBuffer("<resultPage/>");
-                if (restXslt==null || restXslt.equals("")) 
-                    restXslt = config.getDefaultGfindObjectsRestXslt();
-                if (operation!=null && !"".equals(operation)) {
+          
+                if (!"".equals(operation)) {
                     throw new GenericSearchException("ERROR: operation "+operation+" is unknown!");
                 }
             }
         } catch (java.rmi.RemoteException e) {
-//            throw new ServletException("ERROR: \n", e);
-//            params[1] = e.toString();
+        	
             resultXml = new StringBuffer("<resultPage>");
             resultXml.append("<error><message><![CDATA["+e.getMessage()
             					.replaceAll("!\\[CDATA\\[", "")
@@ -143,7 +139,6 @@ public class RESTImpl extends HttpServlet {
             resultXml.append("</resultPage>");
             params[1] = e.getMessage();
             logger.error(e);
-            //e.printStackTrace();
         }
         String timeusedms = Long.toString((new Date()).getTime() - startTime.getTime());
         params[3] = timeusedms;
@@ -151,11 +146,11 @@ public class RESTImpl extends HttpServlet {
         params[5] = request.getRemoteUser();
         params[6] = "SRFTYPE";
         params[7] = config.getSearchResultFilteringType();
+        if (restXslt.equals("")) 
+            restXslt = config.getDefaultGfindObjectsRestXslt();
         resultXml = (new GTransformer()).transform(
         				config.getConfigName()+"/rest/"+restXslt, 
         				resultXml, params);
-//        if (logger.isDebugEnabled())
-//            logger.debug("after "+restXslt+" result=\n"+resultXml);
         
         if (restXslt.indexOf(CONTENTTYPEHTML)>=0)
             response.setContentType("text/html; charset=UTF-8");
@@ -172,9 +167,18 @@ public class RESTImpl extends HttpServlet {
     
     private String gfindObjects(HttpServletRequest request, HttpServletResponse response)
     throws java.rmi.RemoteException {
-        if (restXslt==null || restXslt.equals("")) {
+    	
+    	String indexName = 
+    			request.getParameter(PARAM_INDEXNAME) != null ? request.getParameter(PARAM_INDEXNAME) : "";
+    	String restXslt = 
+    			request.getParameter(PARAM_RESTXSLT) != null ? request.getParameter(PARAM_RESTXSLT) : "";   	
+    	String resultPageXslt = 
+    			(request.getParameter(PARAM_RESULTPAGEXSLT) != null ? request.getParameter(PARAM_RESULTPAGEXSLT) : "");
+    	
+        if (restXslt.equals("")) {
             restXslt = config.getDefaultGfindObjectsRestXslt();
         }
+        
         String query = request.getParameter(PARAM_QUERY);
         if (query==null || query.equals("")) {
             return "<resultPage/>";
@@ -211,7 +215,15 @@ public class RESTImpl extends HttpServlet {
     
     private String browseIndex(HttpServletRequest request, HttpServletResponse response)
     throws java.rmi.RemoteException {
-        if (restXslt==null || restXslt.equals("")) {
+    	
+    	String indexName = 
+    			request.getParameter(PARAM_INDEXNAME) != null ? request.getParameter(PARAM_INDEXNAME) : "";
+    	String restXslt = 
+    			request.getParameter(PARAM_RESTXSLT) != null ? request.getParameter(PARAM_RESTXSLT) : "";   	
+    	String resultPageXslt = 
+    			(request.getParameter(PARAM_RESULTPAGEXSLT) != null ? request.getParameter(PARAM_RESULTPAGEXSLT) : "");
+    	
+        if (restXslt.equals("")) {
             restXslt = config.getDefaultBrowseIndexRestXslt();
         }
         String startTerm = request.getParameter(PARAM_STARTTERM);
@@ -235,7 +247,17 @@ public class RESTImpl extends HttpServlet {
     
     private String getRepositoryInfo(HttpServletRequest request, HttpServletResponse response)
     throws java.rmi.RemoteException {
-        if (restXslt==null || restXslt.equals("")) {
+    	
+    	String repositoryName = 
+    			request.getParameter(PARAM_REPOSITORYNAME) != null ? request.getParameter(PARAM_REPOSITORYNAME) : "";
+		String indexName = 
+    			request.getParameter(PARAM_INDEXNAME) != null ? request.getParameter(PARAM_INDEXNAME) : "";
+    	String restXslt = 
+    			request.getParameter(PARAM_RESTXSLT) != null ? request.getParameter(PARAM_RESTXSLT) : ""; 
+    	String resultPageXslt = 
+    			(request.getParameter(PARAM_RESULTPAGEXSLT) != null ? request.getParameter(PARAM_RESULTPAGEXSLT) : "");
+    	
+        if (restXslt.equals("")) {
             restXslt = config.getDefaultGetRepositoryInfoRestXslt();
         }
         GenericOperationsImpl ops = new GenericOperationsImpl();
@@ -246,7 +268,15 @@ public class RESTImpl extends HttpServlet {
     
     private String getIndexInfo(HttpServletRequest request, HttpServletResponse response)
     throws java.rmi.RemoteException {
-        if (restXslt==null || restXslt.equals("")) {
+    	
+    	String indexName = 
+    			request.getParameter(PARAM_INDEXNAME) != null ? request.getParameter(PARAM_INDEXNAME) : "";
+    	String restXslt = 
+    			request.getParameter(PARAM_RESTXSLT) != null ? request.getParameter(PARAM_RESTXSLT) : ""; 
+    	String resultPageXslt = 
+    			(request.getParameter(PARAM_RESULTPAGEXSLT) != null ? request.getParameter(PARAM_RESULTPAGEXSLT) : "");
+    	
+        if (restXslt.equals("")) {
             restXslt = config.getDefaultGetIndexInfoRestXslt();
         }
         Operations ops = config.getOperationsImpl(indexName);
@@ -257,7 +287,11 @@ public class RESTImpl extends HttpServlet {
     //MIH: flush stored url-resources
     private String flushUrlResources(HttpServletRequest request, HttpServletResponse response)
     throws java.rmi.RemoteException {
-        if (restXslt==null || restXslt.equals("")) {
+    	
+    	String restXslt = 
+    			request.getParameter(PARAM_RESTXSLT) != null ? request.getParameter(PARAM_RESTXSLT) : ""; 
+    	
+        if (restXslt.equals("")) {
             restXslt = config.getDefaultGetIndexInfoRestXslt();
         }
     	config.setUrlResources(new Hashtable<String, byte[]>());
@@ -266,7 +300,17 @@ public class RESTImpl extends HttpServlet {
     
     public String updateIndex(HttpServletRequest request, HttpServletResponse response)
     throws java.rmi.RemoteException {
-        if (restXslt==null || restXslt.equals("")) {
+    	
+    	String repositoryName = 
+    			request.getParameter(PARAM_REPOSITORYNAME) != null ? request.getParameter(PARAM_REPOSITORYNAME) : "";
+		String indexName = 
+    			request.getParameter(PARAM_INDEXNAME) != null ? request.getParameter(PARAM_INDEXNAME) : "";
+    	String restXslt = 
+    			request.getParameter(PARAM_RESTXSLT) != null ? request.getParameter(PARAM_RESTXSLT) : ""; 
+    	String resultPageXslt = 
+    			(request.getParameter(PARAM_RESULTPAGEXSLT) != null ? request.getParameter(PARAM_RESULTPAGEXSLT) : "");
+    	
+        if (restXslt.equals("")) {
             restXslt = config.getDefaultUpdateIndexRestXslt();
         }
         String action = request.getParameter(PARAM_ACTION);
@@ -283,6 +327,10 @@ public class RESTImpl extends HttpServlet {
     
     private String configure(HttpServletRequest request, HttpServletResponse response)
     throws java.rmi.RemoteException {
+    	
+    	String restXslt = 
+    			request.getParameter(PARAM_RESTXSLT) != null ? request.getParameter(PARAM_RESTXSLT) : ""; 
+    			
         String configName = request.getParameter(PARAM_CONFIGNAME);
         String propertyName = request.getParameter("propertyName");
         String propertyValue = "";
@@ -295,15 +343,20 @@ public class RESTImpl extends HttpServlet {
             Config.configure(configName);
             config = Config.getCurrentConfig();
         }
-        if (restXslt==null || restXslt.equals("")) 
+        if (restXslt.equals("")) 
             restXslt = config.getDefaultGfindObjectsRestXslt();
         return "<resultPage/>";
     }
     
     private String getIndexConfigInfo(HttpServletRequest request, HttpServletResponse response)
     throws java.rmi.RemoteException {
-        if (restXslt==null || restXslt.equals("")) 
+    	
+    	String restXslt = 
+    			request.getParameter(PARAM_RESTXSLT) != null ? request.getParameter(PARAM_RESTXSLT) : ""; 
+    	
+        if (restXslt.equals("")) 
             restXslt = "copyXml";
+        
         StringBuffer resultXml = new StringBuffer("<resultPage>");
     	String[] indexNames = config.getIndexNames(null).split("\\s");
     	for (int i=0;i<indexNames.length;i++) {
